@@ -338,7 +338,237 @@ class MenuPage(QWidget):
     def __init__(self):
         super().__init__()
         layout = QVBoxLayout(self)
-        layout.addWidget(QLabel("Menu Management - Coming Soon"))
+        
+        # Add header
+        header = QLabel("Menu Management")
+        header.setObjectName("page-header")
+        layout.addWidget(header)
+        
+        # Add restaurant selector
+        selector_layout = QHBoxLayout()
+        selector_layout.addWidget(QLabel("Select Restaurant:"))
+        self.restaurant_selector = QComboBox()
+        self.restaurant_selector.currentIndexChanged.connect(self.load_menu_items)
+        selector_layout.addWidget(self.restaurant_selector)
+        selector_layout.addStretch()
+        layout.addLayout(selector_layout)
+        
+        # Add buttons
+        button_layout = QHBoxLayout()
+        add_btn = QPushButton("Add Menu Item")
+        update_btn = QPushButton("Update Menu Item")
+        remove_btn = QPushButton("Remove Menu Item")
+        
+        add_btn.clicked.connect(self.add_menu_item)
+        update_btn.clicked.connect(self.update_menu_item)
+        remove_btn.clicked.connect(self.remove_menu_item)
+        
+        button_layout.addWidget(add_btn)
+        button_layout.addWidget(update_btn)
+        button_layout.addWidget(remove_btn)
+        layout.addLayout(button_layout)
+        
+        # Add table
+        self.table = QTableWidget()
+        self.table.setColumnCount(7)
+        self.table.setHorizontalHeaderLabels([
+            "ID", "Restaurant", "Dish Name", "Description", "Price", "Availability", "Last Updated"
+        ])
+        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        layout.addWidget(self.table)
+        
+        # Load initial data
+        self.load_restaurants()
+    
+    def load_restaurants(self):
+        restaurants = execute_query("SELECT restaurant_id, name FROM restaurants")
+        self.restaurant_selector.clear()
+        self.restaurant_selector.addItem("All Restaurants", None)
+        
+        for restaurant in restaurants:
+            self.restaurant_selector.addItem(restaurant['name'], restaurant['restaurant_id'])
+    
+    def load_menu_items(self):
+        restaurant_id = self.restaurant_selector.currentData()
+        
+        if restaurant_id:
+            query = """
+            SELECT m.*, r.name as restaurant_name 
+            FROM menus m
+            JOIN restaurants r ON m.restaurant_id = r.restaurant_id
+            WHERE m.restaurant_id = %s
+            """
+            params = (restaurant_id,)
+        else:
+            query = """
+            SELECT m.*, r.name as restaurant_name 
+            FROM menus m
+            JOIN restaurants r ON m.restaurant_id = r.restaurant_id
+            """
+            params = None
+        
+        menu_items = execute_query(query, params)
+        self.table.setRowCount(len(menu_items))
+        
+        for i, item in enumerate(menu_items):
+            self.table.setItem(i, 0, QTableWidgetItem(str(item['menu_id'])))
+            self.table.setItem(i, 1, QTableWidgetItem(item['restaurant_name']))
+            self.table.setItem(i, 2, QTableWidgetItem(item['dish_name']))
+            self.table.setItem(i, 3, QTableWidgetItem(item['description'] or ''))
+            self.table.setItem(i, 4, QTableWidgetItem(f"${item['price']:.2f}"))
+            self.table.setItem(i, 5, QTableWidgetItem(item['availability']))
+            self.table.setItem(i, 6, QTableWidgetItem(str(item['info_update_time'])))
+    
+    def add_menu_item(self):
+        dialog = MenuItemDialog(self)
+        if dialog.exec():
+            self.load_menu_items()
+    
+    def update_menu_item(self):
+        selected_items = self.table.selectedItems()
+        if not selected_items:
+            QMessageBox.warning(self, "Warning", "Please select a menu item to update")
+            return
+        
+        menu_id = int(self.table.item(selected_items[0].row(), 0).text())
+        dialog = MenuItemDialog(self, menu_id)
+        if dialog.exec():
+            self.load_menu_items()
+    
+    def remove_menu_item(self):
+        selected_items = self.table.selectedItems()
+        if not selected_items:
+            QMessageBox.warning(self, "Warning", "Please select a menu item to remove")
+            return
+        
+        menu_id = int(self.table.item(selected_items[0].row(), 0).text())
+        dish_name = self.table.item(selected_items[0].row(), 2).text()
+        
+        reply = QMessageBox.question(
+            self, "Confirm Removal",
+            f"Are you sure you want to remove {dish_name}?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        
+        if reply == QMessageBox.StandardButton.Yes:
+            result = execute_query(
+                "DELETE FROM menus WHERE menu_id = %s",
+                (menu_id,),
+                fetch=False
+            )
+            if result:
+                self.load_menu_items()
+                QMessageBox.information(self, "Success", "Menu item removed successfully!")
+            else:
+                QMessageBox.critical(self, "Error", "Failed to remove menu item")
+
+class MenuItemDialog(QDialog):
+    def __init__(self, parent=None, menu_id=None):
+        super().__init__(parent)
+        self.menu_id = menu_id
+        self.setWindowTitle("Add Menu Item" if not menu_id else "Update Menu Item")
+        self.setMinimumWidth(500)
+        
+        layout = QVBoxLayout(self)
+        
+        # Add form fields
+        self.restaurant_selector = QComboBox()
+        self.dish_name_input = QLineEdit()
+        self.description_input = QLineEdit()
+        self.price_input = QLineEdit()
+        self.availability_selector = QComboBox()
+        self.availability_selector.addItems(["In Stock", "Out of Stock"])
+        
+        # Load restaurants
+        restaurants = execute_query("SELECT restaurant_id, name FROM restaurants")
+        for restaurant in restaurants:
+            self.restaurant_selector.addItem(restaurant['name'], restaurant['restaurant_id'])
+        
+        layout.addWidget(QLabel("Restaurant:"))
+        layout.addWidget(self.restaurant_selector)
+        layout.addWidget(QLabel("Dish Name:"))
+        layout.addWidget(self.dish_name_input)
+        layout.addWidget(QLabel("Description:"))
+        layout.addWidget(self.description_input)
+        layout.addWidget(QLabel("Price:"))
+        layout.addWidget(self.price_input)
+        layout.addWidget(QLabel("Availability:"))
+        layout.addWidget(self.availability_selector)
+        
+        # Add buttons
+        button_layout = QHBoxLayout()
+        save_btn = QPushButton("Save")
+        cancel_btn = QPushButton("Cancel")
+        
+        save_btn.clicked.connect(self.save_menu_item)
+        cancel_btn.clicked.connect(self.reject)
+        
+        button_layout.addWidget(save_btn)
+        button_layout.addWidget(cancel_btn)
+        layout.addLayout(button_layout)
+        
+        # Load menu item data if updating
+        if menu_id:
+            self.load_menu_item_data()
+    
+    def load_menu_item_data(self):
+        menu_item = execute_query(
+            "SELECT * FROM menus WHERE menu_id = %s",
+            (self.menu_id,)
+        )
+        if menu_item:
+            # Set restaurant
+            index = self.restaurant_selector.findData(menu_item[0]['restaurant_id'])
+            if index >= 0:
+                self.restaurant_selector.setCurrentIndex(index)
+            
+            self.dish_name_input.setText(menu_item[0]['dish_name'])
+            self.description_input.setText(menu_item[0]['description'] or '')
+            self.price_input.setText(str(menu_item[0]['price']))
+            
+            # Set availability
+            index = self.availability_selector.findText(menu_item[0]['availability'])
+            if index >= 0:
+                self.availability_selector.setCurrentIndex(index)
+    
+    def save_menu_item(self):
+        restaurant_id = self.restaurant_selector.currentData()
+        dish_name = self.dish_name_input.text()
+        description = self.description_input.text()
+        price = self.price_input.text()
+        availability = self.availability_selector.currentText()
+        
+        if not all([restaurant_id, dish_name, price]):
+            QMessageBox.warning(self, "Warning", "Please fill in all required fields")
+            return
+        
+        try:
+            price = float(price)
+        except ValueError:
+            QMessageBox.warning(self, "Warning", "Price must be a valid number")
+            return
+        
+        if self.menu_id:
+            query = """
+            UPDATE menus 
+            SET restaurant_id = %s, dish_name = %s, description = %s, 
+                price = %s, availability = %s
+            WHERE menu_id = %s
+            """
+            params = (restaurant_id, dish_name, description, price, availability, self.menu_id)
+        else:
+            query = """
+            INSERT INTO menus (restaurant_id, dish_name, description, price, availability)
+            VALUES (%s, %s, %s, %s, %s)
+            """
+            params = (restaurant_id, dish_name, description, price, availability)
+        
+        result = execute_query(query, params, fetch=False)
+        if result:
+            QMessageBox.information(self, "Success", "Menu item saved successfully!")
+            self.accept()
+        else:
+            QMessageBox.critical(self, "Error", "Failed to save menu item")
 
 class CustomerPage(QWidget):
     def __init__(self):
