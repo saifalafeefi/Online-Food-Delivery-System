@@ -574,7 +574,257 @@ class CustomerPage(QWidget):
     def __init__(self):
         super().__init__()
         layout = QVBoxLayout(self)
-        layout.addWidget(QLabel("Customer Management - Coming Soon"))
+        
+        # Add header
+        header = QLabel("Customer Management")
+        header.setObjectName("page-header")
+        layout.addWidget(header)
+        
+        # Add buttons
+        button_layout = QHBoxLayout()
+        add_btn = QPushButton("Add Customer")
+        update_btn = QPushButton("Update Customer")
+        remove_btn = QPushButton("Remove Customer")
+        view_orders_btn = QPushButton("View Order History")
+        
+        add_btn.clicked.connect(self.add_customer)
+        update_btn.clicked.connect(self.update_customer)
+        remove_btn.clicked.connect(self.remove_customer)
+        view_orders_btn.clicked.connect(self.view_order_history)
+        
+        button_layout.addWidget(add_btn)
+        button_layout.addWidget(update_btn)
+        button_layout.addWidget(remove_btn)
+        button_layout.addWidget(view_orders_btn)
+        layout.addLayout(button_layout)
+        
+        # Add table
+        self.table = QTableWidget()
+        self.table.setColumnCount(8)
+        self.table.setHorizontalHeaderLabels([
+            "ID", "Name", "Address", "Phone", "Email", "Status", "Registration Date", "Last Updated"
+        ])
+        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        layout.addWidget(self.table)
+        
+        # Load initial data
+        self.load_customers()
+    
+    def load_customers(self):
+        customers = execute_query("SELECT * FROM customers")
+        self.table.setRowCount(len(customers))
+        
+        for i, customer in enumerate(customers):
+            self.table.setItem(i, 0, QTableWidgetItem(str(customer['customer_id'])))
+            self.table.setItem(i, 1, QTableWidgetItem(customer['name']))
+            self.table.setItem(i, 2, QTableWidgetItem(customer['address']))
+            self.table.setItem(i, 3, QTableWidgetItem(customer['phone']))
+            self.table.setItem(i, 4, QTableWidgetItem(customer['email']))
+            self.table.setItem(i, 5, QTableWidgetItem(customer['account_status']))
+            self.table.setItem(i, 6, QTableWidgetItem(str(customer['registration_date'])))
+            self.table.setItem(i, 7, QTableWidgetItem(str(customer['info_update_time'])))
+    
+    def add_customer(self):
+        dialog = CustomerDialog(self)
+        if dialog.exec():
+            self.load_customers()
+    
+    def update_customer(self):
+        selected_items = self.table.selectedItems()
+        if not selected_items:
+            QMessageBox.warning(self, "Warning", "Please select a customer to update")
+            return
+        
+        customer_id = int(self.table.item(selected_items[0].row(), 0).text())
+        dialog = CustomerDialog(self, customer_id)
+        if dialog.exec():
+            self.load_customers()
+    
+    def remove_customer(self):
+        selected_items = self.table.selectedItems()
+        if not selected_items:
+            QMessageBox.warning(self, "Warning", "Please select a customer to remove")
+            return
+        
+        customer_id = int(self.table.item(selected_items[0].row(), 0).text())
+        customer_name = self.table.item(selected_items[0].row(), 1).text()
+        
+        reply = QMessageBox.question(
+            self, "Confirm Removal",
+            f"Are you sure you want to remove {customer_name}?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        
+        if reply == QMessageBox.StandardButton.Yes:
+            result = execute_query(
+                "DELETE FROM customers WHERE customer_id = %s",
+                (customer_id,),
+                fetch=False
+            )
+            if result:
+                self.load_customers()
+                QMessageBox.information(self, "Success", "Customer removed successfully!")
+            else:
+                QMessageBox.critical(self, "Error", "Failed to remove customer")
+    
+    def view_order_history(self):
+        selected_items = self.table.selectedItems()
+        if not selected_items:
+            QMessageBox.warning(self, "Warning", "Please select a customer to view order history")
+            return
+        
+        customer_id = int(self.table.item(selected_items[0].row(), 0).text())
+        customer_name = self.table.item(selected_items[0].row(), 1).text()
+        
+        dialog = OrderHistoryDialog(self, customer_id, customer_name)
+        dialog.exec()
+
+class CustomerDialog(QDialog):
+    def __init__(self, parent=None, customer_id=None):
+        super().__init__(parent)
+        self.customer_id = customer_id
+        self.setWindowTitle("Add Customer" if not customer_id else "Update Customer")
+        self.setMinimumWidth(500)
+        
+        layout = QVBoxLayout(self)
+        
+        # Add form fields
+        self.name_input = QLineEdit()
+        self.address_input = QLineEdit()
+        self.phone_input = QLineEdit()
+        self.email_input = QLineEdit()
+        self.status_selector = QComboBox()
+        self.status_selector.addItems(["Active", "Inactive"])
+        
+        layout.addWidget(QLabel("Name:"))
+        layout.addWidget(self.name_input)
+        layout.addWidget(QLabel("Address:"))
+        layout.addWidget(self.address_input)
+        layout.addWidget(QLabel("Phone:"))
+        layout.addWidget(self.phone_input)
+        layout.addWidget(QLabel("Email:"))
+        layout.addWidget(self.email_input)
+        layout.addWidget(QLabel("Account Status:"))
+        layout.addWidget(self.status_selector)
+        
+        # Add buttons
+        button_layout = QHBoxLayout()
+        save_btn = QPushButton("Save")
+        cancel_btn = QPushButton("Cancel")
+        
+        save_btn.clicked.connect(self.save_customer)
+        cancel_btn.clicked.connect(self.reject)
+        
+        button_layout.addWidget(save_btn)
+        button_layout.addWidget(cancel_btn)
+        layout.addLayout(button_layout)
+        
+        # Load customer data if updating
+        if customer_id:
+            self.load_customer_data()
+    
+    def load_customer_data(self):
+        customer = execute_query(
+            "SELECT * FROM customers WHERE customer_id = %s",
+            (self.customer_id,)
+        )
+        if customer:
+            self.name_input.setText(customer[0]['name'])
+            self.address_input.setText(customer[0]['address'])
+            self.phone_input.setText(customer[0]['phone'])
+            self.email_input.setText(customer[0]['email'])
+            
+            # Set status
+            index = self.status_selector.findText(customer[0]['account_status'])
+            if index >= 0:
+                self.status_selector.setCurrentIndex(index)
+    
+    def save_customer(self):
+        name = self.name_input.text()
+        address = self.address_input.text()
+        phone = self.phone_input.text()
+        email = self.email_input.text()
+        status = self.status_selector.currentText()
+        
+        if not all([name, address, phone, email]):
+            QMessageBox.warning(self, "Warning", "Please fill in all required fields")
+            return
+        
+        if self.customer_id:
+            query = """
+            UPDATE customers 
+            SET name = %s, address = %s, phone = %s, email = %s, account_status = %s
+            WHERE customer_id = %s
+            """
+            params = (name, address, phone, email, status, self.customer_id)
+        else:
+            query = """
+            INSERT INTO customers (name, address, phone, email, account_status)
+            VALUES (%s, %s, %s, %s, %s)
+            """
+            params = (name, address, phone, email, status)
+        
+        result = execute_query(query, params, fetch=False)
+        if result:
+            QMessageBox.information(self, "Success", "Customer saved successfully!")
+            self.accept()
+        else:
+            QMessageBox.critical(self, "Error", "Failed to save customer")
+
+class OrderHistoryDialog(QDialog):
+    def __init__(self, parent=None, customer_id=None, customer_name=None):
+        super().__init__(parent)
+        self.customer_id = customer_id
+        self.setWindowTitle(f"Order History - {customer_name}")
+        self.setMinimumSize(800, 600)
+        
+        layout = QVBoxLayout(self)
+        
+        # Add header
+        header = QLabel(f"Order History for {customer_name}")
+        header.setObjectName("page-header")
+        layout.addWidget(header)
+        
+        # Add table
+        self.table = QTableWidget()
+        self.table.setColumnCount(8)
+        self.table.setHorizontalHeaderLabels([
+            "Order ID", "Restaurant", "Dish", "Order Date", "Delivery Status", 
+            "Delivery Time", "Total Amount", "Payment Status"
+        ])
+        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        layout.addWidget(self.table)
+        
+        # Add close button
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(self.accept)
+        layout.addWidget(close_btn)
+        
+        # Load order history
+        self.load_order_history()
+    
+    def load_order_history(self):
+        query = """
+        SELECT o.*, r.name as restaurant_name, m.dish_name
+        FROM orders o
+        JOIN menus m ON o.menu_id = m.menu_id
+        JOIN restaurants r ON m.restaurant_id = r.restaurant_id
+        WHERE o.customer_id = %s
+        ORDER BY o.order_date DESC
+        """
+        orders = execute_query(query, (self.customer_id,))
+        
+        self.table.setRowCount(len(orders))
+        
+        for i, order in enumerate(orders):
+            self.table.setItem(i, 0, QTableWidgetItem(str(order['order_id'])))
+            self.table.setItem(i, 1, QTableWidgetItem(order['restaurant_name']))
+            self.table.setItem(i, 2, QTableWidgetItem(order['dish_name']))
+            self.table.setItem(i, 3, QTableWidgetItem(str(order['order_date'])))
+            self.table.setItem(i, 4, QTableWidgetItem(order['delivery_status']))
+            self.table.setItem(i, 5, QTableWidgetItem(str(order['delivery_time'] or 'Not delivered')))
+            self.table.setItem(i, 6, QTableWidgetItem(f"${order['total_amount']:.2f}"))
+            self.table.setItem(i, 7, QTableWidgetItem(order['payment_status']))
 
 class OrderPage(QWidget):
     def __init__(self):
