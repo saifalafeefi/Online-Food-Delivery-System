@@ -7,6 +7,7 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
 from PyQt6.QtCore import Qt, QSize
 from PyQt6.QtGui import QFont, QIcon, QPixmap
 from db_utils import execute_query
+from datetime import datetime, timedelta
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -830,19 +831,1114 @@ class OrderPage(QWidget):
     def __init__(self):
         super().__init__()
         layout = QVBoxLayout(self)
-        layout.addWidget(QLabel("Order Management - Coming Soon"))
+        
+        # Add header
+        header = QLabel("Order Management")
+        header.setObjectName("page-header")
+        layout.addWidget(header)
+        
+        # Add buttons
+        button_layout = QHBoxLayout()
+        place_order_btn = QPushButton("Place New Order")
+        cancel_order_btn = QPushButton("Cancel Order")
+        update_status_btn = QPushButton("Update Order Status")
+        view_details_btn = QPushButton("View Order Details")
+        
+        place_order_btn.clicked.connect(self.place_order)
+        cancel_order_btn.clicked.connect(self.cancel_order)
+        update_status_btn.clicked.connect(self.update_order_status)
+        view_details_btn.clicked.connect(self.view_order_details)
+        
+        button_layout.addWidget(place_order_btn)
+        button_layout.addWidget(cancel_order_btn)
+        button_layout.addWidget(update_status_btn)
+        button_layout.addWidget(view_details_btn)
+        layout.addLayout(button_layout)
+        
+        # Add table
+        self.table = QTableWidget()
+        self.table.setColumnCount(9)
+        self.table.setHorizontalHeaderLabels([
+            "Order ID", "Customer", "Restaurant", "Dish", "Order Date", 
+            "Delivery Status", "Delivery Time", "Total Amount", "Payment Status"
+        ])
+        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        layout.addWidget(self.table)
+        
+        # Load initial data
+        self.load_orders()
+    
+    def load_orders(self):
+        query = """
+        SELECT o.*, c.name as customer_name, r.name as restaurant_name, m.dish_name
+        FROM orders o
+        JOIN customers c ON o.customer_id = c.customer_id
+        JOIN menus m ON o.menu_id = m.menu_id
+        JOIN restaurants r ON m.restaurant_id = r.restaurant_id
+        ORDER BY o.order_date DESC
+        """
+        orders = execute_query(query)
+        self.table.setRowCount(len(orders))
+        
+        for i, order in enumerate(orders):
+            self.table.setItem(i, 0, QTableWidgetItem(str(order['order_id'])))
+            self.table.setItem(i, 1, QTableWidgetItem(order['customer_name']))
+            self.table.setItem(i, 2, QTableWidgetItem(order['restaurant_name']))
+            self.table.setItem(i, 3, QTableWidgetItem(order['dish_name']))
+            self.table.setItem(i, 4, QTableWidgetItem(str(order['order_date'])))
+            self.table.setItem(i, 5, QTableWidgetItem(order['delivery_status']))
+            self.table.setItem(i, 6, QTableWidgetItem(str(order['delivery_time'] or 'Not delivered')))
+            self.table.setItem(i, 7, QTableWidgetItem(f"${order['total_amount']:.2f}"))
+            self.table.setItem(i, 8, QTableWidgetItem(order['payment_status']))
+    
+    def place_order(self):
+        dialog = PlaceOrderDialog(self)
+        if dialog.exec():
+            self.load_orders()
+    
+    def cancel_order(self):
+        selected_items = self.table.selectedItems()
+        if not selected_items:
+            QMessageBox.warning(self, "Warning", "Please select an order to cancel")
+            return
+        
+        order_id = int(self.table.item(selected_items[0].row(), 0).text())
+        order_status = self.table.item(selected_items[0].row(), 5).text()
+        
+        if order_status == "Delivered":
+            QMessageBox.warning(self, "Warning", "Cannot cancel a delivered order")
+            return
+        
+        if order_status == "Cancelled":
+            QMessageBox.warning(self, "Warning", "Order is already cancelled")
+            return
+        
+        reply = QMessageBox.question(
+            self, "Confirm Cancellation",
+            f"Are you sure you want to cancel order #{order_id}?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        
+        if reply == QMessageBox.StandardButton.Yes:
+            # Update order status
+            result = execute_query(
+                "UPDATE orders SET delivery_status = 'Cancelled' WHERE order_id = %s",
+                (order_id,),
+                fetch=False
+            )
+            
+            if result:
+                # Update menu availability
+                menu_id = execute_query(
+                    "SELECT menu_id FROM orders WHERE order_id = %s",
+                    (order_id,)
+                )[0]['menu_id']
+                
+                execute_query(
+                    "UPDATE menus SET availability = 'In Stock' WHERE menu_id = %s",
+                    (menu_id,),
+                    fetch=False
+                )
+                
+                self.load_orders()
+                QMessageBox.information(self, "Success", "Order cancelled successfully!")
+            else:
+                QMessageBox.critical(self, "Error", "Failed to cancel order")
+    
+    def update_order_status(self):
+        selected_items = self.table.selectedItems()
+        if not selected_items:
+            QMessageBox.warning(self, "Warning", "Please select an order to update")
+            return
+        
+        order_id = int(self.table.item(selected_items[0].row(), 0).text())
+        current_status = self.table.item(selected_items[0].row(), 5).text()
+        
+        if current_status == "Delivered" or current_status == "Cancelled":
+            QMessageBox.warning(self, "Warning", f"Cannot update a {current_status.lower()} order")
+            return
+        
+        dialog = UpdateOrderStatusDialog(self, order_id, current_status)
+        if dialog.exec():
+            self.load_orders()
+    
+    def view_order_details(self):
+        selected_items = self.table.selectedItems()
+        if not selected_items:
+            QMessageBox.warning(self, "Warning", "Please select an order to view details")
+            return
+        
+        order_id = int(self.table.item(selected_items[0].row(), 0).text())
+        dialog = OrderDetailsDialog(self, order_id)
+        dialog.exec()
+
+class PlaceOrderDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Place New Order")
+        self.setMinimumWidth(600)
+        
+        layout = QVBoxLayout(self)
+        
+        # Add form fields
+        self.customer_selector = QComboBox()
+        self.restaurant_selector = QComboBox()
+        self.menu_selector = QComboBox()
+        self.quantity_input = QLineEdit()
+        self.quantity_input.setText("1")
+        
+        # Load customers
+        customers = execute_query("SELECT customer_id, name FROM customers WHERE account_status = 'Active'")
+        for customer in customers:
+            self.customer_selector.addItem(customer['name'], customer['customer_id'])
+        
+        # Load restaurants
+        restaurants = execute_query("SELECT restaurant_id, name FROM restaurants")
+        for restaurant in restaurants:
+            self.restaurant_selector.addItem(restaurant['name'], restaurant['restaurant_id'])
+        
+        # Connect signals
+        self.restaurant_selector.currentIndexChanged.connect(self.load_menu_items)
+        
+        layout.addWidget(QLabel("Customer:"))
+        layout.addWidget(self.customer_selector)
+        layout.addWidget(QLabel("Restaurant:"))
+        layout.addWidget(self.restaurant_selector)
+        layout.addWidget(QLabel("Menu Item:"))
+        layout.addWidget(self.menu_selector)
+        layout.addWidget(QLabel("Quantity:"))
+        layout.addWidget(self.quantity_input)
+        
+        # Add order summary
+        self.summary_label = QLabel("Order Summary:")
+        self.summary_label.setObjectName("summary-label")
+        layout.addWidget(self.summary_label)
+        
+        self.details_label = QLabel()
+        self.details_label.setWordWrap(True)
+        layout.addWidget(self.details_label)
+        
+        # Connect signals for summary update
+        self.menu_selector.currentIndexChanged.connect(self.update_summary)
+        self.quantity_input.textChanged.connect(self.update_summary)
+        
+        # Add buttons
+        button_layout = QHBoxLayout()
+        place_btn = QPushButton("Place Order")
+        cancel_btn = QPushButton("Cancel")
+        
+        place_btn.clicked.connect(self.place_order)
+        cancel_btn.clicked.connect(self.reject)
+        
+        button_layout.addWidget(place_btn)
+        button_layout.addWidget(cancel_btn)
+        layout.addLayout(button_layout)
+        
+        # Load initial menu items
+        self.load_menu_items()
+    
+    def load_menu_items(self):
+        self.menu_selector.clear()
+        restaurant_id = self.restaurant_selector.currentData()
+        
+        if restaurant_id:
+            query = """
+            SELECT menu_id, dish_name, price, availability 
+            FROM menus 
+            WHERE restaurant_id = %s AND availability = 'In Stock'
+            """
+            menu_items = execute_query(query, (restaurant_id,))
+            
+            for item in menu_items:
+                self.menu_selector.addItem(
+                    f"{item['dish_name']} - ${item['price']:.2f}", 
+                    item['menu_id']
+                )
+    
+    def update_summary(self):
+        menu_id = self.menu_selector.currentData()
+        if not menu_id:
+            self.details_label.setText("Please select a menu item")
+            return
+        
+        try:
+            quantity = int(self.quantity_input.text())
+            if quantity <= 0:
+                raise ValueError
+        except ValueError:
+            self.details_label.setText("Please enter a valid quantity")
+            return
+        
+        menu_item = execute_query(
+            "SELECT dish_name, price FROM menus WHERE menu_id = %s",
+            (menu_id,)
+        )[0]
+        
+        total = menu_item['price'] * quantity
+        self.details_label.setText(
+            f"Dish: {menu_item['dish_name']}\n"
+            f"Price: ${menu_item['price']:.2f}\n"
+            f"Quantity: {quantity}\n"
+            f"Total: ${total:.2f}"
+        )
+    
+    def place_order(self):
+        customer_id = self.customer_selector.currentData()
+        menu_id = self.menu_selector.currentData()
+        
+        if not customer_id or not menu_id:
+            QMessageBox.warning(self, "Warning", "Please select a customer and menu item")
+            return
+        
+        try:
+            quantity = int(self.quantity_input.text())
+            if quantity <= 0:
+                raise ValueError
+        except ValueError:
+            QMessageBox.warning(self, "Warning", "Please enter a valid quantity")
+            return
+        
+        # Get menu item price
+        menu_item = execute_query(
+            "SELECT price FROM menus WHERE menu_id = %s",
+            (menu_id,)
+        )[0]
+        
+        total_amount = menu_item['price'] * quantity
+        
+        # Create order
+        query = """
+        INSERT INTO orders (customer_id, menu_id, total_amount, delivery_status, payment_status)
+        VALUES (%s, %s, %s, 'Pending', 'Pending')
+        """
+        result = execute_query(query, (customer_id, menu_id, total_amount), fetch=False)
+        
+        if result:
+            # Update menu availability
+            execute_query(
+                "UPDATE menus SET availability = 'Out of Stock' WHERE menu_id = %s",
+                (menu_id,),
+                fetch=False
+            )
+            
+            QMessageBox.information(self, "Success", "Order placed successfully!")
+            self.accept()
+        else:
+            QMessageBox.critical(self, "Error", "Failed to place order")
+
+class UpdateOrderStatusDialog(QDialog):
+    def __init__(self, parent=None, order_id=None, current_status=None):
+        super().__init__(parent)
+        self.order_id = order_id
+        self.current_status = current_status
+        self.setWindowTitle(f"Update Order Status - Order #{order_id}")
+        self.setMinimumWidth(400)
+        
+        layout = QVBoxLayout(self)
+        
+        # Add status selector
+        layout.addWidget(QLabel("Current Status:"))
+        current_status_label = QLabel(current_status)
+        current_status_label.setObjectName("current-status")
+        layout.addWidget(current_status_label)
+        
+        layout.addWidget(QLabel("New Status:"))
+        self.status_selector = QComboBox()
+        
+        if current_status == "Pending":
+            self.status_selector.addItems(["On Delivery", "Delivered", "Cancelled"])
+        elif current_status == "On Delivery":
+            self.status_selector.addItems(["Delivered", "Cancelled"])
+        
+        layout.addWidget(self.status_selector)
+        
+        # Add payment status selector
+        layout.addWidget(QLabel("Payment Status:"))
+        self.payment_selector = QComboBox()
+        self.payment_selector.addItems(["Pending", "Paid", "Failed"])
+        layout.addWidget(self.payment_selector)
+        
+        # Add buttons
+        button_layout = QHBoxLayout()
+        save_btn = QPushButton("Save")
+        cancel_btn = QPushButton("Cancel")
+        
+        save_btn.clicked.connect(self.save_status)
+        cancel_btn.clicked.connect(self.reject)
+        
+        button_layout.addWidget(save_btn)
+        button_layout.addWidget(cancel_btn)
+        layout.addLayout(button_layout)
+    
+    def save_status(self):
+        new_status = self.status_selector.currentText()
+        payment_status = self.payment_selector.currentText()
+        
+        # Update order status
+        query = """
+        UPDATE orders 
+        SET delivery_status = %s, payment_status = %s
+        """
+        params = [new_status, payment_status]
+        
+        # If status is Delivered, set delivery time
+        if new_status == "Delivered":
+            query += ", delivery_time = CURRENT_TIMESTAMP"
+        
+        query += " WHERE order_id = %s"
+        params.append(self.order_id)
+        
+        result = execute_query(query, tuple(params), fetch=False)
+        
+        if result:
+            # If order is cancelled, update menu availability
+            if new_status == "Cancelled":
+                menu_id = execute_query(
+                    "SELECT menu_id FROM orders WHERE order_id = %s",
+                    (self.order_id,)
+                )[0]['menu_id']
+                
+                execute_query(
+                    "UPDATE menus SET availability = 'In Stock' WHERE menu_id = %s",
+                    (menu_id,),
+                    fetch=False
+                )
+            
+            QMessageBox.information(self, "Success", "Order status updated successfully!")
+            self.accept()
+        else:
+            QMessageBox.critical(self, "Error", "Failed to update order status")
+
+class OrderDetailsDialog(QDialog):
+    def __init__(self, parent=None, order_id=None):
+        super().__init__(parent)
+        self.order_id = order_id
+        self.setWindowTitle(f"Order Details - Order #{order_id}")
+        self.setMinimumSize(600, 400)
+        
+        layout = QVBoxLayout(self)
+        
+        # Get order details
+        query = """
+        SELECT o.*, c.name as customer_name, c.address as customer_address, c.phone as customer_phone,
+               r.name as restaurant_name, r.address as restaurant_address, r.contact_number as restaurant_phone,
+               m.dish_name, m.description, m.price
+        FROM orders o
+        JOIN customers c ON o.customer_id = c.customer_id
+        JOIN menus m ON o.menu_id = m.menu_id
+        JOIN restaurants r ON m.restaurant_id = r.restaurant_id
+        WHERE o.order_id = %s
+        """
+        order = execute_query(query, (order_id,))[0]
+        
+        # Add header
+        header = QLabel(f"Order Details - #{order_id}")
+        header.setObjectName("page-header")
+        layout.addWidget(header)
+        
+        # Add order details
+        details_layout = QVBoxLayout()
+        
+        # Customer details
+        customer_group = QFrame()
+        customer_group.setObjectName("details-group")
+        customer_layout = QVBoxLayout(customer_group)
+        customer_layout.addWidget(QLabel("Customer Information"))
+        customer_layout.addWidget(QLabel(f"Name: {order['customer_name']}"))
+        customer_layout.addWidget(QLabel(f"Address: {order['customer_address']}"))
+        customer_layout.addWidget(QLabel(f"Phone: {order['customer_phone']}"))
+        details_layout.addWidget(customer_group)
+        
+        # Restaurant details
+        restaurant_group = QFrame()
+        restaurant_group.setObjectName("details-group")
+        restaurant_layout = QVBoxLayout(restaurant_group)
+        restaurant_layout.addWidget(QLabel("Restaurant Information"))
+        restaurant_layout.addWidget(QLabel(f"Name: {order['restaurant_name']}"))
+        restaurant_layout.addWidget(QLabel(f"Address: {order['restaurant_address']}"))
+        restaurant_layout.addWidget(QLabel(f"Phone: {order['restaurant_phone']}"))
+        details_layout.addWidget(restaurant_group)
+        
+        # Order details
+        order_group = QFrame()
+        order_group.setObjectName("details-group")
+        order_layout = QVBoxLayout(order_group)
+        order_layout.addWidget(QLabel("Order Information"))
+        order_layout.addWidget(QLabel(f"Dish: {order['dish_name']}"))
+        order_layout.addWidget(QLabel(f"Description: {order['description'] or 'N/A'}"))
+        order_layout.addWidget(QLabel(f"Price: ${order['price']:.2f}"))
+        order_layout.addWidget(QLabel(f"Total Amount: ${order['total_amount']:.2f}"))
+        order_layout.addWidget(QLabel(f"Order Date: {order['order_date']}"))
+        order_layout.addWidget(QLabel(f"Delivery Status: {order['delivery_status']}"))
+        order_layout.addWidget(QLabel(f"Delivery Time: {order['delivery_time'] or 'Not delivered'}"))
+        order_layout.addWidget(QLabel(f"Payment Status: {order['payment_status']}"))
+        details_layout.addWidget(order_group)
+        
+        layout.addLayout(details_layout)
+        
+        # Add close button
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(self.accept)
+        layout.addWidget(close_btn)
 
 class DeliveryPage(QWidget):
     def __init__(self):
         super().__init__()
         layout = QVBoxLayout(self)
-        layout.addWidget(QLabel("Delivery Tracking - Coming Soon"))
+        
+        # Add header
+        header = QLabel("Delivery Tracking")
+        header.setObjectName("page-header")
+        layout.addWidget(header)
+        
+        # Add filter section
+        filter_layout = QHBoxLayout()
+        
+        # Status filter
+        self.status_filter = QComboBox()
+        self.status_filter.addItems(["All", "Pending", "On Delivery", "Delivered", "Cancelled"])
+        self.status_filter.currentTextChanged.connect(self.load_deliveries)
+        
+        # Date filter
+        self.date_filter = QComboBox()
+        self.date_filter.addItems(["Today", "This Week", "This Month", "All Time"])
+        self.date_filter.currentTextChanged.connect(self.load_deliveries)
+        
+        filter_layout.addWidget(QLabel("Status:"))
+        filter_layout.addWidget(self.status_filter)
+        filter_layout.addWidget(QLabel("Date:"))
+        filter_layout.addWidget(self.date_filter)
+        filter_layout.addStretch()
+        
+        layout.addLayout(filter_layout)
+        
+        # Add buttons
+        button_layout = QHBoxLayout()
+        assign_btn = QPushButton("Assign Delivery")
+        update_status_btn = QPushButton("Update Status")
+        view_details_btn = QPushButton("View Details")
+        
+        assign_btn.clicked.connect(self.assign_delivery)
+        update_status_btn.clicked.connect(self.update_delivery_status)
+        view_details_btn.clicked.connect(self.view_delivery_details)
+        
+        button_layout.addWidget(assign_btn)
+        button_layout.addWidget(update_status_btn)
+        button_layout.addWidget(view_details_btn)
+        layout.addLayout(button_layout)
+        
+        # Add table
+        self.table = QTableWidget()
+        self.table.setColumnCount(8)
+        self.table.setHorizontalHeaderLabels([
+            "Order ID", "Customer", "Restaurant", "Delivery Personnel", 
+            "Status", "Assigned Time", "Delivery Time", "Estimated Time"
+        ])
+        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        layout.addWidget(self.table)
+        
+        # Load initial data
+        self.load_deliveries()
+    
+    def load_deliveries(self):
+        status_filter = self.status_filter.currentText()
+        date_filter = self.date_filter.currentText()
+        
+        query = """
+        SELECT o.*, c.name as customer_name, r.name as restaurant_name,
+               dp.name as delivery_person_name, dp.phone as delivery_person_phone
+        FROM orders o
+        JOIN customers c ON o.customer_id = c.customer_id
+        JOIN menus m ON o.menu_id = m.menu_id
+        JOIN restaurants r ON m.restaurant_id = r.restaurant_id
+        LEFT JOIN delivery_personnel dp ON o.delivery_person_id = dp.delivery_person_id
+        WHERE 1=1
+        """
+        params = []
+        
+        if status_filter != "All":
+            query += " AND o.delivery_status = %s"
+            params.append(status_filter)
+        
+        if date_filter == "Today":
+            query += " AND DATE(o.order_date) = CURDATE()"
+        elif date_filter == "This Week":
+            query += " AND YEARWEEK(o.order_date) = YEARWEEK(CURDATE())"
+        elif date_filter == "This Month":
+            query += " AND MONTH(o.order_date) = MONTH(CURDATE()) AND YEAR(o.order_date) = YEAR(CURDATE())"
+        
+        query += " ORDER BY o.order_date DESC"
+        
+        try:
+            deliveries = execute_query(query, tuple(params) if params else None)
+            if deliveries is None:
+                deliveries = []
+            
+            self.table.setRowCount(len(deliveries))
+            
+            for i, delivery in enumerate(deliveries):
+                self.table.setItem(i, 0, QTableWidgetItem(str(delivery['order_id'])))
+                self.table.setItem(i, 1, QTableWidgetItem(delivery['customer_name']))
+                self.table.setItem(i, 2, QTableWidgetItem(delivery['restaurant_name']))
+                self.table.setItem(i, 3, QTableWidgetItem(delivery['delivery_person_name'] or 'Not assigned'))
+                self.table.setItem(i, 4, QTableWidgetItem(delivery['delivery_status']))
+                self.table.setItem(i, 5, QTableWidgetItem(str(delivery['assigned_time'] or 'Not assigned')))
+                self.table.setItem(i, 6, QTableWidgetItem(str(delivery['delivery_time'] or 'Not delivered')))
+                
+                # Calculate estimated delivery time (30 minutes from assignment)
+                if delivery['assigned_time'] and not delivery['delivery_time']:
+                    estimated_time = delivery['assigned_time'] + timedelta(minutes=30)
+                    self.table.setItem(i, 7, QTableWidgetItem(str(estimated_time)))
+                else:
+                    self.table.setItem(i, 7, QTableWidgetItem('N/A'))
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to load deliveries: {str(e)}")
+            self.table.setRowCount(0)
+    
+    def assign_delivery(self):
+        selected_items = self.table.selectedItems()
+        if not selected_items:
+            QMessageBox.warning(self, "Warning", "Please select an order to assign delivery")
+            return
+        
+        order_id = int(self.table.item(selected_items[0].row(), 0).text())
+        current_status = self.table.item(selected_items[0].row(), 4).text()
+        
+        if current_status != "Pending":
+            QMessageBox.warning(self, "Warning", "Can only assign delivery to pending orders")
+            return
+        
+        dialog = AssignDeliveryDialog(self, order_id)
+        if dialog.exec():
+            self.load_deliveries()
+    
+    def update_delivery_status(self):
+        selected_items = self.table.selectedItems()
+        if not selected_items:
+            QMessageBox.warning(self, "Warning", "Please select a delivery to update")
+            return
+        
+        order_id = int(self.table.item(selected_items[0].row(), 0).text())
+        current_status = self.table.item(selected_items[0].row(), 4).text()
+        
+        if current_status == "Delivered" or current_status == "Cancelled":
+            QMessageBox.warning(self, "Warning", f"Cannot update a {current_status.lower()} delivery")
+            return
+        
+        dialog = UpdateDeliveryStatusDialog(self, order_id, current_status)
+        if dialog.exec():
+            self.load_deliveries()
+    
+    def view_delivery_details(self):
+        selected_items = self.table.selectedItems()
+        if not selected_items:
+            QMessageBox.warning(self, "Warning", "Please select a delivery to view details")
+            return
+        
+        order_id = int(self.table.item(selected_items[0].row(), 0).text())
+        dialog = DeliveryDetailsDialog(self, order_id)
+        dialog.exec()
+
+class AssignDeliveryDialog(QDialog):
+    def __init__(self, parent=None, order_id=None):
+        super().__init__(parent)
+        self.order_id = order_id
+        self.setWindowTitle(f"Assign Delivery - Order #{order_id}")
+        self.setMinimumWidth(400)
+        
+        layout = QVBoxLayout(self)
+        
+        # Add delivery person selector
+        layout.addWidget(QLabel("Select Delivery Personnel:"))
+        self.delivery_selector = QComboBox()
+        
+        # Load available delivery personnel
+        query = """
+        SELECT delivery_person_id, name, phone 
+        FROM delivery_personnel 
+        WHERE availability = 'Available'
+        """
+        delivery_personnel = execute_query(query)
+        
+        for person in delivery_personnel:
+            self.delivery_selector.addItem(
+                f"{person['name']} ({person['phone']})", 
+                person['delivery_person_id']
+            )
+        
+        layout.addWidget(self.delivery_selector)
+        
+        # Add estimated delivery time
+        layout.addWidget(QLabel("Estimated Delivery Time:"))
+        estimated_time = QLabel("30 minutes from assignment")
+        estimated_time.setObjectName("estimated-time")
+        layout.addWidget(estimated_time)
+        
+        # Add buttons
+        button_layout = QHBoxLayout()
+        assign_btn = QPushButton("Assign")
+        cancel_btn = QPushButton("Cancel")
+        
+        assign_btn.clicked.connect(self.assign_delivery)
+        cancel_btn.clicked.connect(self.reject)
+        
+        button_layout.addWidget(assign_btn)
+        button_layout.addWidget(cancel_btn)
+        layout.addLayout(button_layout)
+    
+    def assign_delivery(self):
+        delivery_person_id = self.delivery_selector.currentData()
+        
+        if not delivery_person_id:
+            QMessageBox.warning(self, "Warning", "Please select a delivery person")
+            return
+        
+        # Update order with delivery person and status
+        query = """
+        UPDATE orders 
+        SET delivery_person_id = %s, 
+            delivery_status = 'On Delivery',
+            assigned_time = CURRENT_TIMESTAMP
+        WHERE order_id = %s
+        """
+        result = execute_query(query, (delivery_person_id, self.order_id), fetch=False)
+        
+        if result:
+            # Update delivery person availability
+            execute_query(
+                "UPDATE delivery_personnel SET availability = 'On Delivery' WHERE delivery_person_id = %s",
+                (delivery_person_id,),
+                fetch=False
+            )
+            
+            QMessageBox.information(self, "Success", "Delivery assigned successfully!")
+            self.accept()
+        else:
+            QMessageBox.critical(self, "Error", "Failed to assign delivery")
+
+class UpdateDeliveryStatusDialog(QDialog):
+    def __init__(self, parent=None, order_id=None, current_status=None):
+        super().__init__(parent)
+        self.order_id = order_id
+        self.current_status = current_status
+        self.setWindowTitle(f"Update Delivery Status - Order #{order_id}")
+        self.setMinimumWidth(400)
+        
+        layout = QVBoxLayout(self)
+        
+        # Add status selector
+        layout.addWidget(QLabel("Current Status:"))
+        current_status_label = QLabel(current_status)
+        current_status_label.setObjectName("current-status")
+        layout.addWidget(current_status_label)
+        
+        layout.addWidget(QLabel("New Status:"))
+        self.status_selector = QComboBox()
+        
+        if current_status == "On Delivery":
+            self.status_selector.addItems(["Delivered", "Cancelled"])
+        
+        layout.addWidget(self.status_selector)
+        
+        # Add buttons
+        button_layout = QHBoxLayout()
+        save_btn = QPushButton("Save")
+        cancel_btn = QPushButton("Cancel")
+        
+        save_btn.clicked.connect(self.save_status)
+        cancel_btn.clicked.connect(self.reject)
+        
+        button_layout.addWidget(save_btn)
+        button_layout.addWidget(cancel_btn)
+        layout.addLayout(button_layout)
+    
+    def save_status(self):
+        new_status = self.status_selector.currentText()
+        
+        # Update delivery status
+        query = """
+        UPDATE orders 
+        SET delivery_status = %s
+        """
+        params = [new_status]
+        
+        # If status is Delivered, set delivery time
+        if new_status == "Delivered":
+            query += ", delivery_time = CURRENT_TIMESTAMP"
+        
+        query += " WHERE order_id = %s"
+        params.append(self.order_id)
+        
+        result = execute_query(query, tuple(params), fetch=False)
+        
+        if result:
+            # If delivery is completed or cancelled, update delivery person availability
+            if new_status in ["Delivered", "Cancelled"]:
+                delivery_person = execute_query(
+                    "SELECT delivery_person_id FROM orders WHERE order_id = %s",
+                    (self.order_id,)
+                )[0]
+                
+                execute_query(
+                    "UPDATE delivery_personnel SET availability = 'Available' WHERE delivery_person_id = %s",
+                    (delivery_person['delivery_person_id'],),
+                    fetch=False
+                )
+            
+            QMessageBox.information(self, "Success", "Delivery status updated successfully!")
+            self.accept()
+        else:
+            QMessageBox.critical(self, "Error", "Failed to update delivery status")
+
+class DeliveryDetailsDialog(QDialog):
+    def __init__(self, parent=None, order_id=None):
+        super().__init__(parent)
+        self.order_id = order_id
+        self.setWindowTitle(f"Delivery Details - Order #{order_id}")
+        self.setMinimumSize(600, 400)
+        
+        layout = QVBoxLayout(self)
+        
+        # Get delivery details
+        query = """
+        SELECT o.*, c.name as customer_name, c.address as customer_address, c.phone as customer_phone,
+               r.name as restaurant_name, r.address as restaurant_address, r.contact_number as restaurant_phone,
+               dp.name as delivery_person_name, dp.phone as delivery_person_phone, dp.vehicle_type
+        FROM orders o
+        JOIN customers c ON o.customer_id = c.customer_id
+        JOIN menus m ON o.menu_id = m.menu_id
+        JOIN restaurants r ON m.restaurant_id = r.restaurant_id
+        LEFT JOIN delivery_personnel dp ON o.delivery_person_id = dp.delivery_person_id
+        WHERE o.order_id = %s
+        """
+        delivery = execute_query(query, (order_id,))[0]
+        
+        # Add header
+        header = QLabel(f"Delivery Details - #{order_id}")
+        header.setObjectName("page-header")
+        layout.addWidget(header)
+        
+        # Add delivery details
+        details_layout = QVBoxLayout()
+        
+        # Customer details
+        customer_group = QFrame()
+        customer_group.setObjectName("details-group")
+        customer_layout = QVBoxLayout(customer_group)
+        customer_layout.addWidget(QLabel("Customer Information"))
+        customer_layout.addWidget(QLabel(f"Name: {delivery['customer_name']}"))
+        customer_layout.addWidget(QLabel(f"Address: {delivery['customer_address']}"))
+        customer_layout.addWidget(QLabel(f"Phone: {delivery['customer_phone']}"))
+        details_layout.addWidget(customer_group)
+        
+        # Restaurant details
+        restaurant_group = QFrame()
+        restaurant_group.setObjectName("details-group")
+        restaurant_layout = QVBoxLayout(restaurant_group)
+        restaurant_layout.addWidget(QLabel("Restaurant Information"))
+        restaurant_layout.addWidget(QLabel(f"Name: {delivery['restaurant_name']}"))
+        restaurant_layout.addWidget(QLabel(f"Address: {delivery['restaurant_address']}"))
+        restaurant_layout.addWidget(QLabel(f"Phone: {delivery['restaurant_phone']}"))
+        details_layout.addWidget(restaurant_group)
+        
+        # Delivery person details
+        if delivery['delivery_person_id']:
+            delivery_group = QFrame()
+            delivery_group.setObjectName("details-group")
+            delivery_layout = QVBoxLayout(delivery_group)
+            delivery_layout.addWidget(QLabel("Delivery Personnel Information"))
+            delivery_layout.addWidget(QLabel(f"Name: {delivery['delivery_person_name']}"))
+            delivery_layout.addWidget(QLabel(f"Phone: {delivery['delivery_person_phone']}"))
+            delivery_layout.addWidget(QLabel(f"Vehicle: {delivery['vehicle_type']}"))
+            details_layout.addWidget(delivery_group)
+        
+        # Delivery status details
+        status_group = QFrame()
+        status_group.setObjectName("details-group")
+        status_layout = QVBoxLayout(status_group)
+        status_layout.addWidget(QLabel("Delivery Status Information"))
+        status_layout.addWidget(QLabel(f"Status: {delivery['delivery_status']}"))
+        status_layout.addWidget(QLabel(f"Assigned Time: {delivery['assigned_time'] or 'Not assigned'}"))
+        status_layout.addWidget(QLabel(f"Delivery Time: {delivery['delivery_time'] or 'Not delivered'}"))
+        
+        # Add estimated time if delivery is in progress
+        if delivery['assigned_time'] and not delivery['delivery_time']:
+            estimated_time = delivery['assigned_time'] + timedelta(minutes=30)
+            status_layout.addWidget(QLabel(f"Estimated Delivery: {estimated_time}"))
+        
+        details_layout.addWidget(status_group)
+        
+        layout.addLayout(details_layout)
+        
+        # Add close button
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(self.accept)
+        layout.addWidget(close_btn)
 
 class SearchPage(QWidget):
     def __init__(self):
         super().__init__()
         layout = QVBoxLayout(self)
-        layout.addWidget(QLabel("Search - Coming Soon"))
+        
+        # Add header
+        header = QLabel("Search")
+        header.setObjectName("page-header")
+        layout.addWidget(header)
+        
+        # Add search filters
+        filter_layout = QHBoxLayout()
+        
+        # Search type selector
+        self.search_type = QComboBox()
+        self.search_type.addItems([
+            "Restaurants", "Menu Items", "Customers", "Orders", "Deliveries"
+        ])
+        self.search_type.currentTextChanged.connect(self.update_search_fields)
+        
+        # Search field
+        self.search_field = QLineEdit()
+        self.search_field.setPlaceholderText("Enter search term...")
+        self.search_field.textChanged.connect(self.perform_search)
+        
+        # Advanced filters
+        self.advanced_filters = QComboBox()
+        self.advanced_filters.addItem("No Additional Filters")
+        self.advanced_filters.currentTextChanged.connect(self.perform_search)
+        
+        filter_layout.addWidget(QLabel("Search Type:"))
+        filter_layout.addWidget(self.search_type)
+        filter_layout.addWidget(QLabel("Search:"))
+        filter_layout.addWidget(self.search_field)
+        filter_layout.addWidget(QLabel("Additional Filter:"))
+        filter_layout.addWidget(self.advanced_filters)
+        
+        layout.addLayout(filter_layout)
+        
+        # Add results table
+        self.table = QTableWidget()
+        self.table.setColumnCount(5)
+        self.table.setHorizontalHeaderLabels([
+            "ID", "Name", "Details", "Status", "Last Updated"
+        ])
+        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        layout.addWidget(self.table)
+        
+        # Add export button
+        export_btn = QPushButton("Export Results")
+        export_btn.clicked.connect(self.export_results)
+        layout.addWidget(export_btn)
+        
+        # Initialize search fields
+        self.update_search_fields()
+    
+    def update_search_fields(self):
+        search_type = self.search_type.currentText()
+        self.advanced_filters.clear()
+        self.advanced_filters.addItem("No Additional Filters")
+        
+        if search_type == "Restaurants":
+            self.advanced_filters.addItems([
+                "By Cuisine Type",
+                "By Rating",
+                "By Location"
+            ])
+        elif search_type == "Menu Items":
+            self.advanced_filters.addItems([
+                "By Price Range",
+                "By Availability",
+                "By Restaurant"
+            ])
+        elif search_type == "Customers":
+            self.advanced_filters.addItems([
+                "By Account Status",
+                "By Registration Date",
+                "By Order History"
+            ])
+        elif search_type == "Orders":
+            self.advanced_filters.addItems([
+                "By Status",
+                "By Date Range",
+                "By Payment Status"
+            ])
+        elif search_type == "Deliveries":
+            self.advanced_filters.addItems([
+                "By Delivery Status",
+                "By Delivery Person",
+                "By Time Range"
+            ])
+        
+        self.perform_search()
+    
+    def perform_search(self):
+        search_term = self.search_field.text().strip()
+        search_type = self.search_type.currentText()
+        advanced_filter = self.advanced_filters.currentText()
+        
+        if not search_term and advanced_filter == "No Additional Filters":
+            self.table.setRowCount(0)
+            return
+        
+        query = ""
+        params = []
+        
+        if search_type == "Restaurants":
+            query = """
+            SELECT restaurant_id as id, name, 
+                   CONCAT(cuisine_type, ' - ', address) as details,
+                   CONCAT('Rating: ', rating) as status,
+                   info_update_time as last_updated
+            FROM restaurants
+            WHERE name LIKE %s OR cuisine_type LIKE %s OR address LIKE %s
+            """
+            params = [f"%{search_term}%", f"%{search_term}%", f"%{search_term}%"]
+            
+            if advanced_filter == "By Cuisine Type":
+                query += " ORDER BY cuisine_type"
+            elif advanced_filter == "By Rating":
+                query += " ORDER BY rating DESC"
+            elif advanced_filter == "By Location":
+                query += " ORDER BY address"
+        
+        elif search_type == "Menu Items":
+            query = """
+            SELECT m.menu_id as id, m.dish_name as name,
+                   CONCAT(r.name, ' - ', m.description) as details,
+                   m.availability as status,
+                   m.info_update_time as last_updated
+            FROM menus m
+            JOIN restaurants r ON m.restaurant_id = r.restaurant_id
+            WHERE m.dish_name LIKE %s OR m.description LIKE %s
+            """
+            params = [f"%{search_term}%", f"%{search_term}%"]
+            
+            if advanced_filter == "By Price Range":
+                query += " ORDER BY m.price"
+            elif advanced_filter == "By Availability":
+                query += " ORDER BY m.availability"
+            elif advanced_filter == "By Restaurant":
+                query += " ORDER BY r.name"
+        
+        elif search_type == "Customers":
+            query = """
+            SELECT customer_id as id, name,
+                   CONCAT(address, ' - ', phone) as details,
+                   account_status as status,
+                   info_update_time as last_updated
+            FROM customers
+            WHERE name LIKE %s OR address LIKE %s OR phone LIKE %s
+            """
+            params = [f"%{search_term}%", f"%{search_term}%", f"%{search_term}%"]
+            
+            if advanced_filter == "By Account Status":
+                query += " ORDER BY account_status"
+            elif advanced_filter == "By Registration Date":
+                query += " ORDER BY registration_date DESC"
+            elif advanced_filter == "By Order History":
+                query = """
+                SELECT c.customer_id as id, c.name,
+                       CONCAT(c.address, ' - ', c.phone) as details,
+                       c.account_status as status,
+                       c.info_update_time as last_updated
+                FROM customers c
+                JOIN orders o ON c.customer_id = o.customer_id
+                WHERE c.name LIKE %s OR c.address LIKE %s OR c.phone LIKE %s
+                GROUP BY c.customer_id
+                ORDER BY COUNT(o.order_id) DESC
+                """
+        
+        elif search_type == "Orders":
+            query = """
+            SELECT o.order_id as id, 
+                   CONCAT(c.name, ' - ', r.name) as name,
+                   CONCAT(m.dish_name, ' - $', o.total_amount) as details,
+                   o.delivery_status as status,
+                   o.order_date as last_updated
+            FROM orders o
+            JOIN customers c ON o.customer_id = c.customer_id
+            JOIN menus m ON o.menu_id = m.menu_id
+            JOIN restaurants r ON m.restaurant_id = r.restaurant_id
+            WHERE c.name LIKE %s OR r.name LIKE %s OR m.dish_name LIKE %s
+            """
+            params = [f"%{search_term}%", f"%{search_term}%", f"%{search_term}%"]
+            
+            if advanced_filter == "By Status":
+                query += " ORDER BY o.delivery_status"
+            elif advanced_filter == "By Date Range":
+                query += " ORDER BY o.order_date DESC"
+            elif advanced_filter == "By Payment Status":
+                query += " ORDER BY o.payment_status"
+        
+        elif search_type == "Deliveries":
+            query = """
+            SELECT o.order_id as id,
+                   CONCAT(c.name, ' - ', r.name) as name,
+                   CONCAT(dp.name, ' - ', o.delivery_status) as details,
+                   o.delivery_status as status,
+                   o.assigned_time as last_updated
+            FROM orders o
+            JOIN customers c ON o.customer_id = c.customer_id
+            JOIN menus m ON o.menu_id = m.menu_id
+            JOIN restaurants r ON m.restaurant_id = r.restaurant_id
+            LEFT JOIN delivery_personnel dp ON o.delivery_person_id = dp.delivery_person_id
+            WHERE c.name LIKE %s OR r.name LIKE %s OR dp.name LIKE %s
+            """
+            params = [f"%{search_term}%", f"%{search_term}%", f"%{search_term}%"]
+            
+            if advanced_filter == "By Delivery Status":
+                query += " ORDER BY o.delivery_status"
+            elif advanced_filter == "By Delivery Person":
+                query += " ORDER BY dp.name"
+            elif advanced_filter == "By Time Range":
+                query += " ORDER BY o.assigned_time DESC"
+        
+        try:
+            results = execute_query(query, tuple(params))
+            if results is None:
+                results = []
+            
+            self.table.setRowCount(len(results))
+            
+            for i, result in enumerate(results):
+                self.table.setItem(i, 0, QTableWidgetItem(str(result['id'])))
+                self.table.setItem(i, 1, QTableWidgetItem(result['name']))
+                self.table.setItem(i, 2, QTableWidgetItem(result['details']))
+                self.table.setItem(i, 3, QTableWidgetItem(result['status']))
+                self.table.setItem(i, 4, QTableWidgetItem(str(result['last_updated'])))
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Search failed: {str(e)}")
+            self.table.setRowCount(0)
+    
+    def export_results(self):
+        if self.table.rowCount() == 0:
+            QMessageBox.warning(self, "Warning", "No results to export")
+            return
+        
+        try:
+            from datetime import datetime
+            import csv
+            
+            filename = f"search_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+            
+            with open(filename, 'w', newline='') as file:
+                writer = csv.writer(file)
+                
+                # Write headers
+                headers = []
+                for i in range(self.table.columnCount()):
+                    headers.append(self.table.horizontalHeaderItem(i).text())
+                writer.writerow(headers)
+                
+                # Write data
+                for row in range(self.table.rowCount()):
+                    row_data = []
+                    for col in range(self.table.columnCount()):
+                        item = self.table.item(row, col)
+                        row_data.append(item.text() if item else "")
+                    writer.writerow(row_data)
+            
+            QMessageBox.information(self, "Success", f"Results exported to {filename}")
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to export results: {str(e)}")
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
