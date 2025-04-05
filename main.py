@@ -4,7 +4,7 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                             QHBoxLayout, QPushButton, QLabel, QStackedWidget, 
                             QLineEdit, QComboBox, QMessageBox, QTableWidget, 
                             QTableWidgetItem, QHeaderView, QFrame, QDialog, 
-                            QGroupBox)
+                            QGroupBox, QRadioButton)
 from PyQt6.QtCore import Qt, QSize
 from PyQt6.QtGui import QFont, QIcon, QPixmap, QColor
 from db_utils import execute_query, test_connection
@@ -2351,25 +2351,27 @@ class DeliveryPersonDialog(QDialog):
         vehicle_type_layout = QVBoxLayout()
         
         # Vehicle category
+        vehicle_category_group = QGroupBox("Vehicle Category")
+        vehicle_category_layout = QVBoxLayout()
         self.light_vehicle_radio = QRadioButton("Light Vehicle")
         self.heavy_vehicle_radio = QRadioButton("Heavy Vehicle")
         self.light_vehicle_radio.setChecked(True)  # Default selection
-        
-        vehicle_category_layout = QHBoxLayout()
         vehicle_category_layout.addWidget(self.light_vehicle_radio)
         vehicle_category_layout.addWidget(self.heavy_vehicle_radio)
-        vehicle_type_layout.addLayout(vehicle_category_layout)
+        vehicle_category_group.setLayout(vehicle_category_layout)
         
         # Transmission type
+        transmission_group = QGroupBox("Transmission")
+        transmission_layout = QVBoxLayout()
         self.automatic_radio = QRadioButton("Automatic")
         self.manual_radio = QRadioButton("Manual")
         self.automatic_radio.setChecked(True)  # Default selection
-        
-        transmission_layout = QHBoxLayout()
         transmission_layout.addWidget(self.automatic_radio)
         transmission_layout.addWidget(self.manual_radio)
-        vehicle_type_layout.addLayout(transmission_layout)
+        transmission_group.setLayout(transmission_layout)
         
+        vehicle_type_layout.addWidget(vehicle_category_group)
+        vehicle_type_layout.addWidget(transmission_group)
         vehicle_type_group.setLayout(vehicle_type_layout)
         
         # Status selector
@@ -2420,12 +2422,16 @@ class DeliveryPersonDialog(QDialog):
                 vehicle_type = person['vehicle_type']
                 if 'Light Vehicle' in vehicle_type:
                     self.light_vehicle_radio.setChecked(True)
+                    self.heavy_vehicle_radio.setChecked(False)
                 else:
+                    self.light_vehicle_radio.setChecked(False)
                     self.heavy_vehicle_radio.setChecked(True)
                 
                 if 'Automatic' in vehicle_type:
                     self.automatic_radio.setChecked(True)
+                    self.manual_radio.setChecked(False)
                 else:
+                    self.automatic_radio.setChecked(False)
                     self.manual_radio.setChecked(True)
     
     def get_vehicle_type(self):
@@ -2460,7 +2466,7 @@ class DeliveryPersonDialog(QDialog):
             
             result = execute_query(query, params, fetch=False)
             
-            if result:
+            if result is not None:  # Changed from if result to if result is not None
                 QMessageBox.information(self, "Success", "Delivery person saved successfully!")
                 self.accept()
             else:
