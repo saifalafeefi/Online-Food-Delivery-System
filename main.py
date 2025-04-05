@@ -3,7 +3,8 @@ import os
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                             QHBoxLayout, QPushButton, QLabel, QStackedWidget, 
                             QLineEdit, QComboBox, QMessageBox, QTableWidget, 
-                            QTableWidgetItem, QHeaderView, QFrame, QDialog)
+                            QTableWidgetItem, QHeaderView, QFrame, QDialog, 
+                            QGroupBox)
 from PyQt6.QtCore import Qt, QSize
 from PyQt6.QtGui import QFont, QIcon, QPixmap, QColor
 from db_utils import execute_query, test_connection
@@ -48,7 +49,8 @@ class MainWindow(QMainWindow):
             "Menu Management",
             "Customer Management",
             "Order Management",
-            "Delivery Tracking",
+            "Delivery Management",
+            "Delivery Personnel",
             "Search"
         ]
         
@@ -62,6 +64,12 @@ class MainWindow(QMainWindow):
         
         sidebar_layout.addStretch()
         
+        # Add quit button at the bottom
+        quit_btn = QPushButton("Quit")
+        quit_btn.setObjectName("quit-button")
+        quit_btn.clicked.connect(self.close)
+        sidebar_layout.addWidget(quit_btn)
+        
         # Create stacked widget for pages
         self.stacked_widget = QStackedWidget()
         
@@ -71,6 +79,7 @@ class MainWindow(QMainWindow):
         self.customer_page = CustomerPage()
         self.order_page = OrderPage()
         self.delivery_page = DeliveryPage()
+        self.delivery_personnel_page = DeliveryPersonnelPage()
         self.search_page = SearchPage()
         
         self.stacked_widget.addWidget(self.restaurant_page)
@@ -78,6 +87,7 @@ class MainWindow(QMainWindow):
         self.stacked_widget.addWidget(self.customer_page)
         self.stacked_widget.addWidget(self.order_page)
         self.stacked_widget.addWidget(self.delivery_page)
+        self.stacked_widget.addWidget(self.delivery_personnel_page)
         self.stacked_widget.addWidget(self.search_page)
         
         # Add widgets to main layout
@@ -111,6 +121,18 @@ class MainWindow(QMainWindow):
             }
             #sidebar-button:checked {
                 background-color: #3498db;
+            }
+            #quit-button {
+                color: white;
+                border: none;
+                padding: 15px;
+                text-align: left;
+                font-size: 16px;
+                background-color: #c0392b;
+                margin: 10px;
+            }
+            #quit-button:hover {
+                background-color: #e74c3c;
             }
             QTableWidget {
                 background-color: white;
@@ -164,8 +186,9 @@ class MainWindow(QMainWindow):
             "Menu Management": 1,
             "Customer Management": 2,
             "Order Management": 3,
-            "Delivery Tracking": 4,
-            "Search": 5
+            "Delivery Management": 4,
+            "Delivery Personnel": 5,
+            "Search": 6
         }
         self.stacked_widget.setCurrentIndex(page_index[page_name])
 
@@ -1668,15 +1691,20 @@ class AssignDeliveryDialog(QDialog):
         query = """
         SELECT delivery_person_id, name, phone 
         FROM delivery_personnel 
-        WHERE availability = 'Available'
+        WHERE status = 'Available'
         """
         delivery_personnel = execute_query(query)
         
-        for person in delivery_personnel:
-            self.delivery_selector.addItem(
-                f"{person['name']} ({person['phone']})", 
-                person['delivery_person_id']
-            )
+        if delivery_personnel:
+            for person in delivery_personnel:
+                self.delivery_selector.addItem(
+                    f"{person['name']} ({person['phone']})", 
+                    person['delivery_person_id']
+                )
+        else:
+            QMessageBox.warning(self, "Warning", "No delivery personnel available at the moment")
+            self.reject()
+            return
         
         layout.addWidget(self.delivery_selector)
         
@@ -1716,9 +1744,9 @@ class AssignDeliveryDialog(QDialog):
         result = execute_query(query, (delivery_person_id, self.order_id), fetch=False)
         
         if result:
-            # Update delivery person availability
+            # Update delivery person status
             execute_query(
-                "UPDATE delivery_personnel SET availability = 'On Delivery' WHERE delivery_person_id = %s",
+                "UPDATE delivery_personnel SET status = 'On Delivery' WHERE delivery_person_id = %s",
                 (delivery_person_id,),
                 fetch=False
             )
@@ -2156,6 +2184,289 @@ class SearchPage(QWidget):
             QMessageBox.information(self, "Success", f"Results exported to {filename}")
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to export results: {str(e)}")
+
+class DeliveryPersonnelPage(QWidget):
+    def __init__(self):
+        super().__init__()
+        layout = QVBoxLayout(self)
+        
+        # Add header
+        header = QLabel("Delivery Personnel Management")
+        header.setObjectName("page-header")
+        layout.addWidget(header)
+        
+        # Add buttons
+        button_layout = QHBoxLayout()
+        add_btn = QPushButton("Add Delivery Person")
+        update_btn = QPushButton("Update Delivery Person")
+        remove_btn = QPushButton("Remove Delivery Person")
+        delete_all_btn = QPushButton("Delete All Delivery Personnel")
+        
+        add_btn.clicked.connect(self.add_delivery_person)
+        update_btn.clicked.connect(self.update_delivery_person)
+        remove_btn.clicked.connect(self.remove_delivery_person)
+        delete_all_btn.clicked.connect(self.delete_all_delivery_personnel)
+        
+        button_layout.addWidget(add_btn)
+        button_layout.addWidget(update_btn)
+        button_layout.addWidget(remove_btn)
+        button_layout.addWidget(delete_all_btn)
+        layout.addLayout(button_layout)
+        
+        # Add table
+        self.table = QTableWidget()
+        self.table.setColumnCount(6)
+        self.table.setHorizontalHeaderLabels([
+            "ID", "Name", "Phone", "Vehicle Type", "Status", "Last Updated"
+        ])
+        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        layout.addWidget(self.table)
+        
+        # Load initial data
+        self.load_delivery_personnel()
+    
+    def load_delivery_personnel(self):
+        delivery_personnel = execute_query("SELECT * FROM delivery_personnel")
+        self.table.setRowCount(len(delivery_personnel))
+        
+        for i, person in enumerate(delivery_personnel):
+            self.table.setItem(i, 0, QTableWidgetItem(str(person['delivery_person_id'])))
+            self.table.setItem(i, 1, QTableWidgetItem(person['name']))
+            self.table.setItem(i, 2, QTableWidgetItem(person['phone']))
+            self.table.setItem(i, 3, QTableWidgetItem(person.get('vehicle_type', 'Not specified')))
+            self.table.setItem(i, 4, QTableWidgetItem(person['status']))
+            self.table.setItem(i, 5, QTableWidgetItem(str(person.get('info_update_time', 'N/A'))))
+            
+            # Color code based on status
+            if person['status'] == "Available":
+                for j in range(6):
+                    self.table.item(i, j).setBackground(QColor("#e6ffe6"))  # Light green
+            elif person['status'] == "On Delivery":
+                for j in range(6):
+                    self.table.item(i, j).setBackground(QColor("#fff3e6"))  # Light orange
+    
+    def add_delivery_person(self):
+        dialog = DeliveryPersonDialog(self)
+        if dialog.exec():
+            self.load_delivery_personnel()
+    
+    def update_delivery_person(self):
+        selected_items = self.table.selectedItems()
+        if not selected_items:
+            QMessageBox.warning(self, "Warning", "Please select a delivery person to update")
+            return
+        
+        delivery_person_id = int(self.table.item(selected_items[0].row(), 0).text())
+        dialog = DeliveryPersonDialog(self, delivery_person_id)
+        if dialog.exec():
+            self.load_delivery_personnel()
+    
+    def remove_delivery_person(self):
+        selected_items = self.table.selectedItems()
+        if not selected_items:
+            QMessageBox.warning(self, "Warning", "Please select a delivery person to remove")
+            return
+        
+        delivery_person_id = int(self.table.item(selected_items[0].row(), 0).text())
+        person_name = self.table.item(selected_items[0].row(), 1).text()
+        
+        # Check if delivery person has any associated orders
+        orders = execute_query(
+            "SELECT COUNT(*) as count FROM orders WHERE delivery_person_id = %s",
+            (delivery_person_id,)
+        )
+        
+        if orders and orders[0]['count'] > 0:
+            reply = QMessageBox.question(
+                self, "Warning",
+                f"This delivery person has {orders[0]['count']} associated orders. Removing them will also remove these orders. Continue?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            )
+            
+            if reply == QMessageBox.StandardButton.Yes:
+                # First delete associated orders
+                result = execute_query(
+                    "DELETE FROM orders WHERE delivery_person_id = %s",
+                    (delivery_person_id,),
+                    fetch=False
+                )
+                if not result:
+                    QMessageBox.critical(self, "Error", "Failed to remove associated orders")
+                    return
+            else:
+                return
+        
+        reply = QMessageBox.question(
+            self, "Confirm Removal",
+            f"Are you sure you want to remove {person_name}?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        
+        if reply == QMessageBox.StandardButton.Yes:
+            try:
+                result = execute_query(
+                    "DELETE FROM delivery_personnel WHERE delivery_person_id = %s",
+                    (delivery_person_id,),
+                    fetch=False
+                )
+                
+                if result is not None:  # Changed from if result to if result is not None
+                    self.load_delivery_personnel()  # Refresh the table immediately
+                    QMessageBox.information(self, "Success", "Delivery person removed successfully!")
+                else:
+                    QMessageBox.critical(self, "Error", "Failed to remove delivery person")
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"An error occurred while removing the delivery person: {str(e)}")
+    
+    def delete_all_delivery_personnel(self):
+        reply = QMessageBox.question(
+            self, "Confirm Deletion",
+            "Are you sure you want to delete ALL delivery personnel? This action cannot be undone!",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        
+        if reply == QMessageBox.StandardButton.Yes:
+            result = execute_query("DELETE FROM delivery_personnel", fetch=False)
+            if result:
+                self.load_delivery_personnel()
+                QMessageBox.information(self, "Success", "All delivery personnel deleted successfully!")
+            else:
+                QMessageBox.critical(self, "Error", "Failed to delete delivery personnel")
+
+class DeliveryPersonDialog(QDialog):
+    def __init__(self, parent=None, delivery_person_id=None):
+        super().__init__(parent)
+        self.delivery_person_id = delivery_person_id
+        self.setWindowTitle("Add Delivery Person" if not delivery_person_id else "Update Delivery Person")
+        self.setMinimumWidth(400)
+        
+        layout = QVBoxLayout(self)
+        
+        # Add form fields
+        self.name_input = QLineEdit()
+        self.phone_input = QLineEdit()
+        
+        # Vehicle type selection with radio buttons
+        vehicle_type_group = QGroupBox("Vehicle Type")
+        vehicle_type_layout = QVBoxLayout()
+        
+        # Vehicle category
+        self.light_vehicle_radio = QRadioButton("Light Vehicle")
+        self.heavy_vehicle_radio = QRadioButton("Heavy Vehicle")
+        self.light_vehicle_radio.setChecked(True)  # Default selection
+        
+        vehicle_category_layout = QHBoxLayout()
+        vehicle_category_layout.addWidget(self.light_vehicle_radio)
+        vehicle_category_layout.addWidget(self.heavy_vehicle_radio)
+        vehicle_type_layout.addLayout(vehicle_category_layout)
+        
+        # Transmission type
+        self.automatic_radio = QRadioButton("Automatic")
+        self.manual_radio = QRadioButton("Manual")
+        self.automatic_radio.setChecked(True)  # Default selection
+        
+        transmission_layout = QHBoxLayout()
+        transmission_layout.addWidget(self.automatic_radio)
+        transmission_layout.addWidget(self.manual_radio)
+        vehicle_type_layout.addLayout(transmission_layout)
+        
+        vehicle_type_group.setLayout(vehicle_type_layout)
+        
+        # Status selector
+        self.status_selector = QComboBox()
+        self.status_selector.addItems(["Available", "On Delivery"])
+        
+        layout.addWidget(QLabel("Name:"))
+        layout.addWidget(self.name_input)
+        layout.addWidget(QLabel("Phone:"))
+        layout.addWidget(self.phone_input)
+        layout.addWidget(vehicle_type_group)
+        layout.addWidget(QLabel("Status:"))
+        layout.addWidget(self.status_selector)
+        
+        # Add buttons
+        button_layout = QHBoxLayout()
+        save_btn = QPushButton("Save")
+        cancel_btn = QPushButton("Cancel")
+        
+        save_btn.clicked.connect(self.save_delivery_person)
+        cancel_btn.clicked.connect(self.reject)
+        
+        button_layout.addWidget(save_btn)
+        button_layout.addWidget(cancel_btn)
+        layout.addLayout(button_layout)
+        
+        # Load delivery person data if updating
+        if delivery_person_id:
+            self.load_delivery_person_data()
+    
+    def load_delivery_person_data(self):
+        delivery_person = execute_query(
+            "SELECT * FROM delivery_personnel WHERE delivery_person_id = %s",
+            (self.delivery_person_id,)
+        )
+        if delivery_person:
+            person = delivery_person[0]
+            self.name_input.setText(person['name'])
+            self.phone_input.setText(person['phone'])
+            
+            # Set status
+            index = self.status_selector.findText(person['status'])
+            if index >= 0:
+                self.status_selector.setCurrentIndex(index)
+            
+            # Set vehicle type
+            if 'vehicle_type' in person and person['vehicle_type']:
+                vehicle_type = person['vehicle_type']
+                if 'Light Vehicle' in vehicle_type:
+                    self.light_vehicle_radio.setChecked(True)
+                else:
+                    self.heavy_vehicle_radio.setChecked(True)
+                
+                if 'Automatic' in vehicle_type:
+                    self.automatic_radio.setChecked(True)
+                else:
+                    self.manual_radio.setChecked(True)
+    
+    def get_vehicle_type(self):
+        category = "Light Vehicle" if self.light_vehicle_radio.isChecked() else "Heavy Vehicle"
+        transmission = "Automatic" if self.automatic_radio.isChecked() else "Manual"
+        return f"{category} - {transmission}"
+    
+    def save_delivery_person(self):
+        name = self.name_input.text().strip()
+        phone = self.phone_input.text().strip()
+        status = self.status_selector.currentText()
+        vehicle_type = self.get_vehicle_type()
+        
+        if not name or not phone:
+            QMessageBox.warning(self, "Warning", "Please fill in all required fields")
+            return
+        
+        try:
+            if self.delivery_person_id:  # Update existing delivery person
+                query = """
+                UPDATE delivery_personnel 
+                SET name = %s, phone = %s, status = %s, vehicle_type = %s
+                WHERE delivery_person_id = %s
+                """
+                params = (name, phone, status, vehicle_type, self.delivery_person_id)
+            else:  # Add new delivery person
+                query = """
+                INSERT INTO delivery_personnel (name, phone, status, vehicle_type)
+                VALUES (%s, %s, %s, %s)
+                """
+                params = (name, phone, status, vehicle_type)
+            
+            result = execute_query(query, params, fetch=False)
+            
+            if result:
+                QMessageBox.information(self, "Success", "Delivery person saved successfully!")
+                self.accept()
+            else:
+                QMessageBox.critical(self, "Error", "Failed to save delivery person")
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"An error occurred: {str(e)}")
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

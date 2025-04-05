@@ -65,7 +65,9 @@ def create_database():
                 delivery_person_id INT AUTO_INCREMENT PRIMARY KEY,
                 name VARCHAR(100) NOT NULL,
                 phone VARCHAR(20) NOT NULL,
-                status ENUM('Available', 'Assigned', 'On Delivery') DEFAULT 'Available'
+                status ENUM('Available', 'Assigned', 'On Delivery') DEFAULT 'Available',
+                vehicle_type VARCHAR(50) DEFAULT 'Light Vehicle - Automatic',
+                info_update_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
             )
             """,
             """

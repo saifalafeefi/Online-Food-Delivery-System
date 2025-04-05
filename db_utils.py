@@ -52,12 +52,13 @@ def execute_query(query, params=None, fetch=True):
         if fetch:
             result = cursor.fetchall()
         else:
-            connection.commit()
+            connection.commit()  # Commit the transaction for non-fetch operations
             result = cursor.lastrowid
             
         return result
     except mysql.connector.Error as err:
         print(f"Error executing query: {err}")
+        connection.rollback()  # Rollback on error
         return None
     finally:
         if 'cursor' in locals():
