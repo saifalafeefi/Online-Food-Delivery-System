@@ -5,6 +5,25 @@ import os
 #environment variables
 load_dotenv()
 
+def test_connection():
+    """Test the database connection and return True if successful, False otherwise"""
+    try:
+        connection = get_db_connection()
+        if connection and connection.is_connected():
+            db_info = connection.get_server_info()
+            print(f"Connected to MySQL Server version {db_info}")
+            cursor = connection.cursor()
+            cursor.execute("SELECT DATABASE();")
+            db_name = cursor.fetchone()[0]
+            print(f"Connected to database: {db_name}")
+            cursor.close()
+            connection.close()
+            return True
+        return False
+    except mysql.connector.Error as err:
+        print(f"Error testing connection: {err}")
+        return False
+
 def get_db_connection():
     try:
         connection = mysql.connector.connect(

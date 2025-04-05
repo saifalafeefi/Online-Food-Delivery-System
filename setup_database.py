@@ -15,8 +15,11 @@ def create_database():
         )
         cursor = conn.cursor()
 
-        #database
-        cursor.execute(f"CREATE DATABASE IF NOT EXISTS {os.getenv('DB_NAME')}")
+        # Drop existing database if it exists
+        cursor.execute(f"DROP DATABASE IF EXISTS {os.getenv('DB_NAME')}")
+        
+        # Create new database
+        cursor.execute(f"CREATE DATABASE {os.getenv('DB_NAME')}")
         cursor.execute(f"USE {os.getenv('DB_NAME')}")
 
         #tables
@@ -52,13 +55,14 @@ def create_database():
                 description TEXT,
                 price DECIMAL(10,2) NOT NULL,
                 availability ENUM('In Stock', 'Out of Stock') DEFAULT 'In Stock',
+                stock_quantity INT DEFAULT 0,
                 info_update_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                 FOREIGN KEY (restaurant_id) REFERENCES restaurants(restaurant_id) ON DELETE CASCADE
             )
             """,
             """
             CREATE TABLE IF NOT EXISTS delivery_personnel (
-                delivery_id INT AUTO_INCREMENT PRIMARY KEY,
+                delivery_person_id INT AUTO_INCREMENT PRIMARY KEY,
                 name VARCHAR(100) NOT NULL,
                 phone VARCHAR(20) NOT NULL,
                 status ENUM('Available', 'Assigned', 'On Delivery') DEFAULT 'Available'
@@ -69,15 +73,16 @@ def create_database():
                 order_id INT AUTO_INCREMENT PRIMARY KEY,
                 customer_id INT,
                 menu_id INT,
-                delivery_id INT,
                 order_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                delivery_status ENUM('Pending', 'Delivered', 'Cancelled') DEFAULT 'Pending',
+                delivery_status ENUM('Pending', 'On Delivery', 'Delivered', 'Cancelled') DEFAULT 'Pending',
                 delivery_time TIMESTAMP NULL,
-                total_amount DECIMAL(10,2) NOT NULL,
+                total_amount DECIMAL(10,2),
                 payment_status ENUM('Pending', 'Paid', 'Failed') DEFAULT 'Pending',
+                delivery_person_id INT,
+                assigned_time TIMESTAMP NULL,
                 FOREIGN KEY (customer_id) REFERENCES customers(customer_id),
                 FOREIGN KEY (menu_id) REFERENCES menus(menu_id),
-                FOREIGN KEY (delivery_id) REFERENCES delivery_personnel(delivery_id)
+                FOREIGN KEY (delivery_person_id) REFERENCES delivery_personnel(delivery_person_id)
             )
             """,
             """

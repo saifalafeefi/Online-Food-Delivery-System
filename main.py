@@ -5,9 +5,17 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                             QLineEdit, QComboBox, QMessageBox, QTableWidget, 
                             QTableWidgetItem, QHeaderView, QFrame, QDialog)
 from PyQt6.QtCore import Qt, QSize
-from PyQt6.QtGui import QFont, QIcon, QPixmap
-from db_utils import execute_query
+from PyQt6.QtGui import QFont, QIcon, QPixmap, QColor
+from db_utils import execute_query, test_connection
 from datetime import datetime, timedelta
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+
+# Test database connection at startup
+if not test_connection():
+    print("WARNING: Database connection failed. The application may not work correctly.")
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -176,14 +184,17 @@ class RestaurantPage(QWidget):
         add_btn = QPushButton("Add Restaurant")
         update_btn = QPushButton("Update Restaurant")
         remove_btn = QPushButton("Remove Restaurant")
+        delete_all_btn = QPushButton("Delete All Restaurants")
         
         add_btn.clicked.connect(self.add_restaurant)
         update_btn.clicked.connect(self.update_restaurant)
         remove_btn.clicked.connect(self.remove_restaurant)
+        delete_all_btn.clicked.connect(self.delete_all_restaurants)
         
         button_layout.addWidget(add_btn)
         button_layout.addWidget(update_btn)
         button_layout.addWidget(remove_btn)
+        button_layout.addWidget(delete_all_btn)
         layout.addLayout(button_layout)
         
         # Add table
@@ -252,6 +263,21 @@ class RestaurantPage(QWidget):
                 QMessageBox.information(self, "Success", "Restaurant removed successfully!")
             else:
                 QMessageBox.critical(self, "Error", "Failed to remove restaurant")
+    
+    def delete_all_restaurants(self):
+        reply = QMessageBox.question(
+            self, "Confirm Deletion",
+            "Are you sure you want to delete ALL restaurants? This will also delete all associated menu items and orders. This action cannot be undone!",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        
+        if reply == QMessageBox.StandardButton.Yes:
+            result = execute_query("DELETE FROM restaurants", fetch=False)
+            if result:
+                self.load_restaurants()
+                QMessageBox.information(self, "Success", "All restaurants deleted successfully!")
+            else:
+                QMessageBox.critical(self, "Error", "Failed to delete restaurants")
 
 class RestaurantDialog(QDialog):
     def __init__(self, parent=None, restaurant_id=None):
@@ -336,8 +362,8 @@ class RestaurantDialog(QDialog):
             QMessageBox.critical(self, "Error", "Failed to save restaurant")
 
 class MenuPage(QWidget):
-    def __init__(self):
-        super().__init__()
+    def __init__(self, parent=None):
+        super().__init__(parent)
         layout = QVBoxLayout(self)
         
         # Add header
@@ -346,104 +372,208 @@ class MenuPage(QWidget):
         layout.addWidget(header)
         
         # Add restaurant selector
-        selector_layout = QHBoxLayout()
-        selector_layout.addWidget(QLabel("Select Restaurant:"))
+        restaurant_layout = QHBoxLayout()
+        restaurant_layout.addWidget(QLabel("Select Restaurant:"))
         self.restaurant_selector = QComboBox()
         self.restaurant_selector.currentIndexChanged.connect(self.load_menu_items)
-        selector_layout.addWidget(self.restaurant_selector)
-        selector_layout.addStretch()
-        layout.addLayout(selector_layout)
+        restaurant_layout.addWidget(self.restaurant_selector)
+        layout.addLayout(restaurant_layout)
         
         # Add buttons
         button_layout = QHBoxLayout()
         add_btn = QPushButton("Add Menu Item")
         update_btn = QPushButton("Update Menu Item")
         remove_btn = QPushButton("Remove Menu Item")
+        update_stock_btn = QPushButton("Update Stock")
+        delete_all_btn = QPushButton("Delete All Menu Items")
         
-        add_btn.clicked.connect(self.add_menu_item)
-        update_btn.clicked.connect(self.update_menu_item)
+        add_btn.clicked.connect(self.show_add_menu_dialog)
+        update_btn.clicked.connect(self.show_update_menu_dialog)
         remove_btn.clicked.connect(self.remove_menu_item)
+        update_stock_btn.clicked.connect(self.update_stock)
+        delete_all_btn.clicked.connect(self.delete_all_menu_items)
         
         button_layout.addWidget(add_btn)
         button_layout.addWidget(update_btn)
         button_layout.addWidget(remove_btn)
+        button_layout.addWidget(update_stock_btn)
+        button_layout.addWidget(delete_all_btn)
         layout.addLayout(button_layout)
         
-        # Add table
-        self.table = QTableWidget()
-        self.table.setColumnCount(7)
-        self.table.setHorizontalHeaderLabels([
-            "ID", "Restaurant", "Dish Name", "Description", "Price", "Availability", "Last Updated"
+        # Add menu table
+        self.menu_table = QTableWidget()
+        self.menu_table.setColumnCount(6)
+        self.menu_table.setHorizontalHeaderLabels([
+            "Menu ID", "Dish Name", "Description", "Price", 
+            "Stock Quantity", "Availability"
         ])
-        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        layout.addWidget(self.table)
+        layout.addWidget(self.menu_table)
         
-        # Load initial data
         self.load_restaurants()
-    
-    def load_restaurants(self):
-        restaurants = execute_query("SELECT restaurant_id, name FROM restaurants")
-        self.restaurant_selector.clear()
-        self.restaurant_selector.addItem("All Restaurants", None)
-        
-        for restaurant in restaurants:
-            self.restaurant_selector.addItem(restaurant['name'], restaurant['restaurant_id'])
+        self.load_menu_items()
     
     def load_menu_items(self):
-        restaurant_id = self.restaurant_selector.currentData()
-        
-        if restaurant_id:
+        try:
+            restaurant_id = self.restaurant_selector.currentData()
+            if not restaurant_id:
+                self.menu_table.setRowCount(0)
+                return
+            
             query = """
-            SELECT m.*, r.name as restaurant_name 
-            FROM menus m
-            JOIN restaurants r ON m.restaurant_id = r.restaurant_id
-            WHERE m.restaurant_id = %s
+            SELECT menu_id, dish_name, description, price, 
+                   stock_quantity, availability
+            FROM menus 
+            WHERE restaurant_id = %s
+            ORDER BY dish_name
             """
-            params = (restaurant_id,)
-        else:
-            query = """
-            SELECT m.*, r.name as restaurant_name 
-            FROM menus m
-            JOIN restaurants r ON m.restaurant_id = r.restaurant_id
-            """
-            params = None
-        
-        menu_items = execute_query(query, params)
-        self.table.setRowCount(len(menu_items))
-        
-        for i, item in enumerate(menu_items):
-            self.table.setItem(i, 0, QTableWidgetItem(str(item['menu_id'])))
-            self.table.setItem(i, 1, QTableWidgetItem(item['restaurant_name']))
-            self.table.setItem(i, 2, QTableWidgetItem(item['dish_name']))
-            self.table.setItem(i, 3, QTableWidgetItem(item['description'] or ''))
-            self.table.setItem(i, 4, QTableWidgetItem(f"${item['price']:.2f}"))
-            self.table.setItem(i, 5, QTableWidgetItem(item['availability']))
-            self.table.setItem(i, 6, QTableWidgetItem(str(item['info_update_time'])))
+            
+            menu_items = execute_query(query, (restaurant_id,))
+            
+            if menu_items is None:
+                menu_items = []
+                QMessageBox.warning(self, "Warning", "Could not load menu items. Please check database connection.")
+            
+            self.menu_table.setRowCount(len(menu_items))
+            
+            for i, item in enumerate(menu_items):
+                self.menu_table.setItem(i, 0, QTableWidgetItem(str(item['menu_id'])))
+                self.menu_table.setItem(i, 1, QTableWidgetItem(item['dish_name']))
+                self.menu_table.setItem(i, 2, QTableWidgetItem(item['description']))
+                self.menu_table.setItem(i, 3, QTableWidgetItem(f"${item['price']}"))
+                self.menu_table.setItem(i, 4, QTableWidgetItem(str(item['stock_quantity'])))
+                self.menu_table.setItem(i, 5, QTableWidgetItem(item['availability']))
+                
+                # Color code based on availability
+                if item['availability'] == "Out of Stock":
+                    for j in range(6):
+                        self.menu_table.item(i, j).setBackground(QColor("#ffe6e6"))  # Light red
+                
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to load menu items: {str(e)}")
     
-    def add_menu_item(self):
+    def update_stock(self):
+        selected_items = self.menu_table.selectedItems()
+        if not selected_items:
+            QMessageBox.warning(self, "Warning", "Please select a menu item to update stock")
+            return
+        
+        menu_id = int(self.menu_table.item(selected_items[0].row(), 0).text())
+        current_stock = int(self.menu_table.item(selected_items[0].row(), 4).text())
+        current_availability = self.menu_table.item(selected_items[0].row(), 5).text()
+        
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Update Stock")
+        dialog.setMinimumWidth(300)
+        
+        layout = QVBoxLayout(dialog)
+        
+        # Add stock quantity input
+        layout.addWidget(QLabel("Current Stock:"))
+        current_stock_label = QLabel(str(current_stock))
+        layout.addWidget(current_stock_label)
+        
+        layout.addWidget(QLabel("New Stock Quantity:"))
+        stock_input = QLineEdit()
+        stock_input.setText(str(current_stock))
+        layout.addWidget(stock_input)
+        
+        # Add availability selector
+        layout.addWidget(QLabel("Availability:"))
+        availability_selector = QComboBox()
+        availability_selector.addItems(["In Stock", "Out of Stock"])
+        availability_selector.setCurrentText(current_availability)
+        layout.addWidget(availability_selector)
+        
+        # Add buttons
+        button_layout = QHBoxLayout()
+        save_btn = QPushButton("Save")
+        cancel_btn = QPushButton("Cancel")
+        
+        save_btn.clicked.connect(lambda: self.save_stock(
+            dialog, menu_id, stock_input.text(), 
+            availability_selector.currentText()
+        ))
+        cancel_btn.clicked.connect(dialog.reject)
+        
+        button_layout.addWidget(save_btn)
+        button_layout.addWidget(cancel_btn)
+        layout.addLayout(button_layout)
+        
+        dialog.exec()
+    
+    def save_stock(self, dialog, menu_id, new_stock, new_availability):
+        try:
+            new_stock = int(new_stock)
+            if new_stock < 0:
+                QMessageBox.warning(self, "Warning", "Stock quantity cannot be negative")
+                return
+            
+            result = execute_query(
+                "UPDATE menus SET stock_quantity = %s, availability = %s WHERE menu_id = %s",
+                (new_stock, new_availability, menu_id),
+                fetch=False
+            )
+            
+            if result is not None:
+                dialog.accept()
+                self.load_menu_items()
+                QMessageBox.information(self, "Success", "Stock updated successfully!")
+            else:
+                QMessageBox.critical(self, "Error", "Failed to update stock")
+        except ValueError:
+            QMessageBox.warning(self, "Warning", "Please enter a valid number for stock quantity")
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to update stock: {str(e)}")
+    
+    def delete_all_menu_items(self):
+        reply = QMessageBox.question(
+            self, "Confirm Deletion",
+            "Are you sure you want to delete ALL menu items? This action cannot be undone!",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        
+        if reply == QMessageBox.StandardButton.Yes:
+            restaurant_id = self.restaurant_selector.currentData()
+            if not restaurant_id:
+                QMessageBox.warning(self, "Warning", "Please select a restaurant first")
+                return
+            
+            result = execute_query(
+                "DELETE FROM menus WHERE restaurant_id = %s",
+                (restaurant_id,),
+                fetch=False
+            )
+            
+            if result is not None:
+                self.load_menu_items()
+                QMessageBox.information(self, "Success", "All menu items deleted successfully!")
+            else:
+                QMessageBox.critical(self, "Error", "Failed to delete menu items")
+    
+    def show_add_menu_dialog(self):
         dialog = MenuItemDialog(self)
         if dialog.exec():
             self.load_menu_items()
     
-    def update_menu_item(self):
-        selected_items = self.table.selectedItems()
+    def show_update_menu_dialog(self):
+        selected_items = self.menu_table.selectedItems()
         if not selected_items:
             QMessageBox.warning(self, "Warning", "Please select a menu item to update")
             return
         
-        menu_id = int(self.table.item(selected_items[0].row(), 0).text())
+        menu_id = int(self.menu_table.item(selected_items[0].row(), 0).text())
         dialog = MenuItemDialog(self, menu_id)
         if dialog.exec():
             self.load_menu_items()
     
     def remove_menu_item(self):
-        selected_items = self.table.selectedItems()
+        selected_items = self.menu_table.selectedItems()
         if not selected_items:
             QMessageBox.warning(self, "Warning", "Please select a menu item to remove")
             return
         
-        menu_id = int(self.table.item(selected_items[0].row(), 0).text())
-        dish_name = self.table.item(selected_items[0].row(), 2).text()
+        menu_id = int(self.menu_table.item(selected_items[0].row(), 0).text())
+        dish_name = self.menu_table.item(selected_items[0].row(), 1).text()
         
         reply = QMessageBox.question(
             self, "Confirm Removal",
@@ -457,11 +587,27 @@ class MenuPage(QWidget):
                 (menu_id,),
                 fetch=False
             )
-            if result:
+            if result is not None:
                 self.load_menu_items()
                 QMessageBox.information(self, "Success", "Menu item removed successfully!")
             else:
                 QMessageBox.critical(self, "Error", "Failed to remove menu item")
+    
+    def load_restaurants(self):
+        try:
+            restaurants = execute_query(
+                "SELECT restaurant_id, name FROM restaurants"
+            )
+            
+            if restaurants is None:
+                restaurants = []
+                QMessageBox.warning(self, "Warning", "Could not load restaurants")
+            
+            self.restaurant_selector.clear()
+            for restaurant in restaurants:
+                self.restaurant_selector.addItem(restaurant['name'], restaurant['restaurant_id'])
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to load restaurants: {str(e)}")
 
 class MenuItemDialog(QDialog):
     def __init__(self, parent=None, menu_id=None):
@@ -587,16 +733,19 @@ class CustomerPage(QWidget):
         update_btn = QPushButton("Update Customer")
         remove_btn = QPushButton("Remove Customer")
         view_orders_btn = QPushButton("View Order History")
+        delete_all_btn = QPushButton("Delete All Customers")
         
         add_btn.clicked.connect(self.add_customer)
         update_btn.clicked.connect(self.update_customer)
         remove_btn.clicked.connect(self.remove_customer)
         view_orders_btn.clicked.connect(self.view_order_history)
+        delete_all_btn.clicked.connect(self.delete_all_customers)
         
         button_layout.addWidget(add_btn)
         button_layout.addWidget(update_btn)
         button_layout.addWidget(remove_btn)
         button_layout.addWidget(view_orders_btn)
+        button_layout.addWidget(delete_all_btn)
         layout.addLayout(button_layout)
         
         # Add table
@@ -679,6 +828,21 @@ class CustomerPage(QWidget):
         
         dialog = OrderHistoryDialog(self, customer_id, customer_name)
         dialog.exec()
+    
+    def delete_all_customers(self):
+        reply = QMessageBox.question(
+            self, "Confirm Deletion",
+            "Are you sure you want to delete ALL customers? This will also delete all associated orders. This action cannot be undone!",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        
+        if reply == QMessageBox.StandardButton.Yes:
+            result = execute_query("DELETE FROM customers", fetch=False)
+            if result:
+                self.load_customers()
+                QMessageBox.information(self, "Success", "All customers deleted successfully!")
+            else:
+                QMessageBox.critical(self, "Error", "Failed to delete customers")
 
 class CustomerDialog(QDialog):
     def __init__(self, parent=None, customer_id=None):
@@ -828,8 +992,8 @@ class OrderHistoryDialog(QDialog):
             self.table.setItem(i, 7, QTableWidgetItem(order['payment_status']))
 
 class OrderPage(QWidget):
-    def __init__(self):
-        super().__init__()
+    def __init__(self, parent=None):
+        super().__init__(parent)
         layout = QVBoxLayout(self)
         
         # Add header
@@ -840,119 +1004,87 @@ class OrderPage(QWidget):
         # Add buttons
         button_layout = QHBoxLayout()
         place_order_btn = QPushButton("Place New Order")
-        cancel_order_btn = QPushButton("Cancel Order")
         update_status_btn = QPushButton("Update Order Status")
-        view_details_btn = QPushButton("View Order Details")
+        delete_all_btn = QPushButton("Delete All Orders")
         
-        place_order_btn.clicked.connect(self.place_order)
-        cancel_order_btn.clicked.connect(self.cancel_order)
-        update_status_btn.clicked.connect(self.update_order_status)
-        view_details_btn.clicked.connect(self.view_order_details)
+        place_order_btn.clicked.connect(self.show_place_order_dialog)
+        update_status_btn.clicked.connect(self.show_update_status_dialog)
+        delete_all_btn.clicked.connect(self.delete_all_orders)
         
         button_layout.addWidget(place_order_btn)
-        button_layout.addWidget(cancel_order_btn)
         button_layout.addWidget(update_status_btn)
-        button_layout.addWidget(view_details_btn)
+        button_layout.addWidget(delete_all_btn)
         layout.addLayout(button_layout)
         
-        # Add table
-        self.table = QTableWidget()
-        self.table.setColumnCount(9)
-        self.table.setHorizontalHeaderLabels([
-            "Order ID", "Customer", "Restaurant", "Dish", "Order Date", 
-            "Delivery Status", "Delivery Time", "Total Amount", "Payment Status"
+        # Add order table
+        self.order_table = QTableWidget()
+        self.order_table.setColumnCount(8)
+        self.order_table.setHorizontalHeaderLabels([
+            "Order ID", "Customer", "Restaurant", "Menu Item", 
+            "Quantity", "Stock Left", "Status", "Payment Status"
         ])
-        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        layout.addWidget(self.table)
+        layout.addWidget(self.order_table)
         
-        # Load initial data
         self.load_orders()
     
     def load_orders(self):
-        query = """
-        SELECT o.*, c.name as customer_name, r.name as restaurant_name, m.dish_name
-        FROM orders o
-        JOIN customers c ON o.customer_id = c.customer_id
-        JOIN menus m ON o.menu_id = m.menu_id
-        JOIN restaurants r ON m.restaurant_id = r.restaurant_id
-        ORDER BY o.order_date DESC
-        """
-        orders = execute_query(query)
-        self.table.setRowCount(len(orders))
-        
-        for i, order in enumerate(orders):
-            self.table.setItem(i, 0, QTableWidgetItem(str(order['order_id'])))
-            self.table.setItem(i, 1, QTableWidgetItem(order['customer_name']))
-            self.table.setItem(i, 2, QTableWidgetItem(order['restaurant_name']))
-            self.table.setItem(i, 3, QTableWidgetItem(order['dish_name']))
-            self.table.setItem(i, 4, QTableWidgetItem(str(order['order_date'])))
-            self.table.setItem(i, 5, QTableWidgetItem(order['delivery_status']))
-            self.table.setItem(i, 6, QTableWidgetItem(str(order['delivery_time'] or 'Not delivered')))
-            self.table.setItem(i, 7, QTableWidgetItem(f"${order['total_amount']:.2f}"))
-            self.table.setItem(i, 8, QTableWidgetItem(order['payment_status']))
+        try:
+            query = """
+            SELECT o.order_id, o.quantity, o.delivery_status, o.payment_status,
+                   c.name as customer_name, r.name as restaurant_name,
+                   m.dish_name, m.stock_quantity
+            FROM orders o
+            JOIN customers c ON o.customer_id = c.customer_id
+            JOIN restaurants r ON o.restaurant_id = r.restaurant_id
+            JOIN menus m ON o.menu_id = m.menu_id
+            ORDER BY o.order_time DESC
+            """
+            
+            logging.debug("Executing query to load orders: %s", query)
+            orders = execute_query(query)
+            logging.debug("Orders loaded: %s", orders)
+            
+            if orders is None:
+                orders = []
+                QMessageBox.warning(self, "Warning", "Could not load orders. Please check database connection.")
+            
+            self.order_table.setRowCount(len(orders))
+            
+            for i, order in enumerate(orders):
+                self.order_table.setItem(i, 0, QTableWidgetItem(str(order['order_id'])))
+                self.order_table.setItem(i, 1, QTableWidgetItem(order['customer_name']))
+                self.order_table.setItem(i, 2, QTableWidgetItem(order['restaurant_name']))
+                self.order_table.setItem(i, 3, QTableWidgetItem(order['dish_name']))
+                self.order_table.setItem(i, 4, QTableWidgetItem(str(order['quantity'])))
+                self.order_table.setItem(i, 5, QTableWidgetItem(str(order['stock_quantity'])))
+                self.order_table.setItem(i, 6, QTableWidgetItem(order['delivery_status']))
+                self.order_table.setItem(i, 7, QTableWidgetItem(order['payment_status']))
+                
+                # Color code based on status
+                if order['delivery_status'] == "Delivered":
+                    for j in range(8):
+                        self.order_table.item(i, j).setBackground(QColor("#e6ffe6"))  # Light green
+                elif order['delivery_status'] == "Cancelled":
+                    for j in range(8):
+                        self.order_table.item(i, j).setBackground(QColor("#ffe6e6"))  # Light red
+                
+        except Exception as e:
+            logging.error("Failed to load orders: %s", str(e))
+            QMessageBox.critical(self, "Error", f"Failed to load orders: {str(e)}")
     
-    def place_order(self):
+    def show_place_order_dialog(self):
         dialog = PlaceOrderDialog(self)
         if dialog.exec():
             self.load_orders()
     
-    def cancel_order(self):
-        selected_items = self.table.selectedItems()
-        if not selected_items:
-            QMessageBox.warning(self, "Warning", "Please select an order to cancel")
-            return
-        
-        order_id = int(self.table.item(selected_items[0].row(), 0).text())
-        order_status = self.table.item(selected_items[0].row(), 5).text()
-        
-        if order_status == "Delivered":
-            QMessageBox.warning(self, "Warning", "Cannot cancel a delivered order")
-            return
-        
-        if order_status == "Cancelled":
-            QMessageBox.warning(self, "Warning", "Order is already cancelled")
-            return
-        
-        reply = QMessageBox.question(
-            self, "Confirm Cancellation",
-            f"Are you sure you want to cancel order #{order_id}?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-        )
-        
-        if reply == QMessageBox.StandardButton.Yes:
-            # Update order status
-            result = execute_query(
-                "UPDATE orders SET delivery_status = 'Cancelled' WHERE order_id = %s",
-                (order_id,),
-                fetch=False
-            )
-            
-            if result:
-                # Update menu availability
-                menu_id = execute_query(
-                    "SELECT menu_id FROM orders WHERE order_id = %s",
-                    (order_id,)
-                )[0]['menu_id']
-                
-                execute_query(
-                    "UPDATE menus SET availability = 'In Stock' WHERE menu_id = %s",
-                    (menu_id,),
-                    fetch=False
-                )
-                
-                self.load_orders()
-                QMessageBox.information(self, "Success", "Order cancelled successfully!")
-            else:
-                QMessageBox.critical(self, "Error", "Failed to cancel order")
-    
-    def update_order_status(self):
-        selected_items = self.table.selectedItems()
+    def show_update_status_dialog(self):
+        selected_items = self.order_table.selectedItems()
         if not selected_items:
             QMessageBox.warning(self, "Warning", "Please select an order to update")
             return
         
-        order_id = int(self.table.item(selected_items[0].row(), 0).text())
-        current_status = self.table.item(selected_items[0].row(), 5).text()
+        order_id = int(self.order_table.item(selected_items[0].row(), 0).text())
+        current_status = self.order_table.item(selected_items[0].row(), 6).text()
         
         if current_status == "Delivered" or current_status == "Cancelled":
             QMessageBox.warning(self, "Warning", f"Cannot update a {current_status.lower()} order")
@@ -962,15 +1094,26 @@ class OrderPage(QWidget):
         if dialog.exec():
             self.load_orders()
     
-    def view_order_details(self):
-        selected_items = self.table.selectedItems()
-        if not selected_items:
-            QMessageBox.warning(self, "Warning", "Please select an order to view details")
-            return
+    def delete_all_orders(self):
+        reply = QMessageBox.question(
+            self, "Confirm Deletion",
+            "Are you sure you want to delete ALL orders? This action cannot be undone!",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
         
-        order_id = int(self.table.item(selected_items[0].row(), 0).text())
-        dialog = OrderDetailsDialog(self, order_id)
-        dialog.exec()
+        if reply == QMessageBox.StandardButton.Yes:
+            try:
+                logging.debug("Executing query to delete all orders")
+                result = execute_query("DELETE FROM orders", fetch=False)
+                if result is not None:
+                    self.load_orders()
+                    QMessageBox.information(self, "Success", "All orders deleted successfully!")
+                else:
+                    logging.error("Failed to delete orders: No result returned")
+                    QMessageBox.critical(self, "Error", "Failed to delete orders")
+            except Exception as e:
+                logging.error("Failed to delete orders: %s", str(e))
+                QMessageBox.critical(self, "Error", f"Failed to delete orders: {str(e)}")
 
 class PlaceOrderDialog(QDialog):
     def __init__(self, parent=None):
@@ -1043,17 +1186,19 @@ class PlaceOrderDialog(QDialog):
         
         if restaurant_id:
             query = """
-            SELECT menu_id, dish_name, price, availability 
+            SELECT menu_id, dish_name, price, availability, stock_quantity 
             FROM menus 
-            WHERE restaurant_id = %s AND availability = 'In Stock'
+            WHERE restaurant_id = %s
             """
             menu_items = execute_query(query, (restaurant_id,))
             
             for item in menu_items:
-                self.menu_selector.addItem(
-                    f"{item['dish_name']} - ${item['price']:.2f}", 
-                    item['menu_id']
-                )
+                # Only add items that are in stock and have stock quantity > 0
+                if item['availability'] == 'In Stock' and item['stock_quantity'] > 0:
+                    self.menu_selector.addItem(
+                        f"{item['dish_name']} - ${item['price']:.2f} (Stock: {item['stock_quantity']})", 
+                        item['menu_id']
+                    )
     
     def update_summary(self):
         menu_id = self.menu_selector.currentData()
@@ -1070,61 +1215,96 @@ class PlaceOrderDialog(QDialog):
             return
         
         menu_item = execute_query(
-            "SELECT dish_name, price FROM menus WHERE menu_id = %s",
+            "SELECT dish_name, price, stock_quantity FROM menus WHERE menu_id = %s",
             (menu_id,)
         )[0]
+        
+        if quantity > menu_item['stock_quantity']:
+            self.details_label.setText(f"Error: Only {menu_item['stock_quantity']} items available in stock")
+            return
         
         total = menu_item['price'] * quantity
         self.details_label.setText(
             f"Dish: {menu_item['dish_name']}\n"
             f"Price: ${menu_item['price']:.2f}\n"
             f"Quantity: {quantity}\n"
+            f"Available Stock: {menu_item['stock_quantity']}\n"
             f"Total: ${total:.2f}"
         )
     
     def place_order(self):
-        customer_id = self.customer_selector.currentData()
-        menu_id = self.menu_selector.currentData()
-        
-        if not customer_id or not menu_id:
-            QMessageBox.warning(self, "Warning", "Please select a customer and menu item")
-            return
-        
         try:
-            quantity = int(self.quantity_input.text())
+            customer_id = self.customer_selector.currentData()
+            restaurant_id = self.restaurant_selector.currentData()
+            menu_id = self.menu_selector.currentData()
+            
+            if not customer_id:
+                QMessageBox.warning(self, "Warning", "Please select a customer")
+                return
+            
+            if not restaurant_id:
+                QMessageBox.warning(self, "Warning", "Please select a restaurant")
+                return
+            
+            if not menu_id:
+                QMessageBox.warning(self, "Warning", "Please select a menu item")
+                return
+            
+            quantity = int(self.quantity_input.text() or 0)
             if quantity <= 0:
-                raise ValueError
-        except ValueError:
-            QMessageBox.warning(self, "Warning", "Please enter a valid quantity")
-            return
-        
-        # Get menu item price
-        menu_item = execute_query(
-            "SELECT price FROM menus WHERE menu_id = %s",
-            (menu_id,)
-        )[0]
-        
-        total_amount = menu_item['price'] * quantity
-        
-        # Create order
-        query = """
-        INSERT INTO orders (customer_id, menu_id, total_amount, delivery_status, payment_status)
-        VALUES (%s, %s, %s, 'Pending', 'Pending')
-        """
-        result = execute_query(query, (customer_id, menu_id, total_amount), fetch=False)
-        
-        if result:
-            # Update menu availability
-            execute_query(
-                "UPDATE menus SET availability = 'Out of Stock' WHERE menu_id = %s",
-                (menu_id,),
+                QMessageBox.warning(self, "Warning", "Please enter a valid quantity")
+                return
+            
+            # Get current stock for the menu item
+            current_stock = execute_query(
+                "SELECT stock_quantity FROM menus WHERE menu_id = %s",
+                (menu_id,)
+            )
+            
+            if not current_stock or current_stock[0]['stock_quantity'] < quantity:
+                QMessageBox.warning(self, "Warning", "Item is no longer available in stock")
+                return
+            
+            # Place order
+            logging.debug("Placing order for customer_id: %s, restaurant_id: %s, menu_id: %s, quantity: %s", 
+                        customer_id, restaurant_id, menu_id, quantity)
+            result = execute_query(
+                """
+                INSERT INTO orders (
+                    customer_id, restaurant_id, menu_id, quantity,
+                    delivery_status, payment_status, order_time
+                ) VALUES (%s, %s, %s, %s, 'Pending', 'Pending', CURRENT_TIMESTAMP)
+                """,
+                (customer_id, restaurant_id, menu_id, quantity),
                 fetch=False
             )
             
-            QMessageBox.information(self, "Success", "Order placed successfully!")
-            self.accept()
-        else:
-            QMessageBox.critical(self, "Error", "Failed to place order")
+            if result is not None:
+                # Update menu stock
+                execute_query(
+                    """
+                    UPDATE menus 
+                    SET stock_quantity = stock_quantity - %s,
+                        availability = CASE 
+                            WHEN stock_quantity - %s = 0 THEN 'Out of Stock'
+                            ELSE 'In Stock'
+                        END
+                    WHERE menu_id = %s
+                    """,
+                    (quantity, quantity, menu_id),
+                    fetch=False
+                )
+                
+                QMessageBox.information(self, "Success", "Order placed successfully!")
+                self.accept()
+            else:
+                logging.error("Failed to place order: No result returned")
+                QMessageBox.critical(self, "Error", "Failed to place order")
+        except ValueError:
+            QMessageBox.warning(self, "Warning", "Please enter a valid quantity")
+        except Exception as e:
+            logging.error("Failed to place order: %s", str(e))
+            QMessageBox.critical(self, "Error", f"Failed to place order: {str(e)}")
 
 class UpdateOrderStatusDialog(QDialog):
     def __init__(self, parent=None, order_id=None, current_status=None):
@@ -1174,40 +1354,59 @@ class UpdateOrderStatusDialog(QDialog):
         new_status = self.status_selector.currentText()
         payment_status = self.payment_selector.currentText()
         
-        # Update order status
-        query = """
-        UPDATE orders 
-        SET delivery_status = %s, payment_status = %s
-        """
-        params = [new_status, payment_status]
-        
-        # If status is Delivered, set delivery time
-        if new_status == "Delivered":
-            query += ", delivery_time = CURRENT_TIMESTAMP"
-        
-        query += " WHERE order_id = %s"
-        params.append(self.order_id)
-        
-        result = execute_query(query, tuple(params), fetch=False)
-        
-        if result:
-            # If order is cancelled, update menu availability
-            if new_status == "Cancelled":
-                menu_id = execute_query(
-                    "SELECT menu_id FROM orders WHERE order_id = %s",
-                    (self.order_id,)
-                )[0]['menu_id']
-                
-                execute_query(
-                    "UPDATE menus SET availability = 'In Stock' WHERE menu_id = %s",
-                    (menu_id,),
-                    fetch=False
-                )
+        try:
+            # Get the menu_id and quantity for this order first
+            order_result = execute_query(
+                "SELECT menu_id, quantity FROM orders WHERE order_id = %s",
+                (self.order_id,)
+            )
             
-            QMessageBox.information(self, "Success", "Order status updated successfully!")
-            self.accept()
-        else:
-            QMessageBox.critical(self, "Error", "Failed to update order status")
+            if not order_result or len(order_result) == 0:
+                QMessageBox.critical(self, "Error", "Could not find menu item for this order")
+                return
+                
+            menu_id = order_result[0]['menu_id']
+            quantity = order_result[0]['quantity']
+            
+            # Update order status
+            query = """
+            UPDATE orders 
+            SET delivery_status = %s, payment_status = %s
+            """
+            params = [new_status, payment_status]
+            
+            # If status is Delivered, set delivery time
+            if new_status == "Delivered":
+                query += ", delivery_time = CURRENT_TIMESTAMP"
+            
+            query += " WHERE order_id = %s"
+            params.append(self.order_id)
+            
+            result = execute_query(query, tuple(params), fetch=False)
+            
+            if result is not None:
+                # Update menu availability based on order status
+                if new_status == "Cancelled":
+                    # If order is cancelled, restore the stock quantity
+                    execute_query(
+                        "UPDATE menus SET stock_quantity = stock_quantity + %s, availability = 'In Stock' WHERE menu_id = %s",
+                        (quantity, menu_id),
+                        fetch=False
+                    )
+                elif new_status == "Delivered" and self.current_status == "On Delivery":
+                    # If order is delivered, keep the menu item out of stock
+                    execute_query(
+                        "UPDATE menus SET availability = 'Out of Stock' WHERE menu_id = %s AND stock_quantity = 0",
+                        (menu_id,),
+                        fetch=False
+                    )
+                
+                QMessageBox.information(self, "Success", "Order status updated successfully!")
+                self.accept()
+            else:
+                QMessageBox.critical(self, "Error", "Failed to update order status. Please check the database connection.")
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to update order status: {str(e)}")
 
 class OrderDetailsDialog(QDialog):
     def __init__(self, parent=None, order_id=None):
@@ -1317,14 +1516,17 @@ class DeliveryPage(QWidget):
         assign_btn = QPushButton("Assign Delivery")
         update_status_btn = QPushButton("Update Status")
         view_details_btn = QPushButton("View Details")
+        delete_all_btn = QPushButton("Delete All Deliveries")
         
         assign_btn.clicked.connect(self.assign_delivery)
         update_status_btn.clicked.connect(self.update_delivery_status)
         view_details_btn.clicked.connect(self.view_delivery_details)
+        delete_all_btn.clicked.connect(self.delete_all_deliveries)
         
         button_layout.addWidget(assign_btn)
         button_layout.addWidget(update_status_btn)
         button_layout.addWidget(view_details_btn)
+        button_layout.addWidget(delete_all_btn)
         layout.addLayout(button_layout)
         
         # Add table
@@ -1438,6 +1640,21 @@ class DeliveryPage(QWidget):
         order_id = int(self.table.item(selected_items[0].row(), 0).text())
         dialog = DeliveryDetailsDialog(self, order_id)
         dialog.exec()
+    
+    def delete_all_deliveries(self):
+        reply = QMessageBox.question(
+            self, "Confirm Deletion",
+            "Are you sure you want to delete ALL deliveries? This will also delete all associated orders. This action cannot be undone!",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        
+        if reply == QMessageBox.StandardButton.Yes:
+            result = execute_query("DELETE FROM orders WHERE delivery_person_id IS NOT NULL", fetch=False)
+            if result:
+                self.load_deliveries()
+                QMessageBox.information(self, "Success", "All deliveries deleted successfully!")
+            else:
+                QMessageBox.critical(self, "Error", "Failed to delete deliveries")
 
 class AssignDeliveryDialog(QDialog):
     def __init__(self, parent=None, order_id=None):
@@ -1577,7 +1794,7 @@ class UpdateDeliveryStatusDialog(QDialog):
                 delivery_person = execute_query(
                     "SELECT delivery_person_id FROM orders WHERE order_id = %s",
                     (self.order_id,)
-                )[0]
+                )
                 
                 execute_query(
                     "UPDATE delivery_personnel SET availability = 'Available' WHERE delivery_person_id = %s",
