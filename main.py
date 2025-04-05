@@ -1086,10 +1086,6 @@ class OrderPage(QWidget):
         order_id = int(self.order_table.item(selected_items[0].row(), 0).text())
         current_status = self.order_table.item(selected_items[0].row(), 6).text()
         
-        if current_status == "Delivered" or current_status == "Cancelled":
-            QMessageBox.warning(self, "Warning", f"Cannot update a {current_status.lower()} order")
-            return
-        
         dialog = UpdateOrderStatusDialog(self, order_id, current_status)
         if dialog.exec():
             self.load_orders()
@@ -1325,10 +1321,13 @@ class UpdateOrderStatusDialog(QDialog):
         layout.addWidget(QLabel("New Status:"))
         self.status_selector = QComboBox()
         
-        if current_status == "Pending":
-            self.status_selector.addItems(["On Delivery", "Delivered", "Cancelled"])
-        elif current_status == "On Delivery":
-            self.status_selector.addItems(["Delivered", "Cancelled"])
+        # Always show all status options
+        self.status_selector.addItems(["Pending", "On Delivery", "Delivered", "Cancelled"])
+        
+        # Set current status as selected
+        index = self.status_selector.findText(current_status)
+        if index >= 0:
+            self.status_selector.setCurrentIndex(index)
         
         layout.addWidget(self.status_selector)
         
@@ -1623,10 +1622,6 @@ class DeliveryPage(QWidget):
         order_id = int(self.table.item(selected_items[0].row(), 0).text())
         current_status = self.table.item(selected_items[0].row(), 4).text()
         
-        if current_status == "Delivered" or current_status == "Cancelled":
-            QMessageBox.warning(self, "Warning", f"Cannot update a {current_status.lower()} delivery")
-            return
-        
         dialog = UpdateDeliveryStatusDialog(self, order_id, current_status)
         if dialog.exec():
             self.load_deliveries()
@@ -1752,8 +1747,13 @@ class UpdateDeliveryStatusDialog(QDialog):
         layout.addWidget(QLabel("New Status:"))
         self.status_selector = QComboBox()
         
-        if current_status == "On Delivery":
-            self.status_selector.addItems(["Delivered", "Cancelled"])
+        # Always show all status options
+        self.status_selector.addItems(["Pending", "On Delivery", "Delivered", "Cancelled"])
+        
+        # Set current status as selected
+        index = self.status_selector.findText(current_status)
+        if index >= 0:
+            self.status_selector.setCurrentIndex(index)
         
         layout.addWidget(self.status_selector)
         
