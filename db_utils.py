@@ -38,30 +38,42 @@ def get_db_connection():
         return None
 
 def execute_query(query, params=None, fetch=True):
-    connection = get_db_connection()
-    if not connection:
-        return None
-    
     try:
-        cursor = connection.cursor(dictionary=True)
-        if params:
-            cursor.execute(query, params)
-        else:
-            cursor.execute(query)
+        connection = get_db_connection()
+        if not connection:
+            print("Database connection failed. Check your database settings or server status.")
+            return None
+        
+        try:
+            cursor = connection.cursor(dictionary=True)
+            if params:
+                cursor.execute(query, params)
+            else:
+                cursor.execute(query)
+                
+            if fetch:
+                result = cursor.fetchall()
+            else:
+                connection.commit()  # Commit the transaction for non-fetch operations
+                result = cursor.lastrowid
+                
+            return result
+        except mysql.connector.Error as err:
+            error_msg = f"Error executing query: {err}"
+            print(error_msg)
             
-        if fetch:
-            result = cursor.fetchall()
-        else:
-            connection.commit()  # Commit the transaction for non-fetch operations
-            result = cursor.lastrowid
+            # Print the query for debugging
+            param_str = str(params) if params else "None"
+            print(f"Failed query: {query}")
+            print(f"Parameters: {param_str}")
             
-        return result
-    except mysql.connector.Error as err:
-        print(f"Error executing query: {err}")
-        connection.rollback()  # Rollback on error
-        return None
-    finally:
-        if 'cursor' in locals():
-            cursor.close()
-        if connection.is_connected():
-            connection.close() 
+            connection.rollback()  # Rollback on error
+            return None
+        finally:
+            if 'cursor' in locals() and cursor:
+                cursor.close()
+            if connection and connection.is_connected():
+                connection.close()
+    except Exception as e:
+        print(f"Database connection error: {e}")
+        return None 

@@ -1,19 +1,42 @@
 # Online Food Delivery System
 
-![Version](https://img.shields.io/badge/version-1.3.1-blue.svg)
+![Version](https://img.shields.io/badge/version-2.0.0-blue.svg)
 
-KU project food delivery management system that connects restaurants, customers, and delivery personnel through a Python backend with MySQL database integration. The system allows users to browse menus, place orders, and track deliveries in real-time.
+A comprehensive food delivery platform that connects customers, restaurants, and delivery personnel, similar to commercial services like DoorDash, Deliveroo, and Talabat. The application features multiple interfaces for different user roles and real-time order tracking.
 
-## Features
+## Key Features
 
-- **Restaurant Management**: Add, update, and manage restaurant information
-- **Menu Management**: Create and manage restaurant menus with prices and availability
-- **Customer Management**: Track customer information and order history
-- **Order Management**: Process and track orders with real-time status updates
-- **Delivery Management**: Assign and track deliveries with estimated times
-- **Delivery Personnel Management**: Manage delivery personnel with vehicle types
-- **Search Functionality**: Search across all entities with advanced filtering
-- **Export Capabilities**: Export search results to CSV files
+### For Customers
+- User registration and login
+- Browse restaurants by cuisine type, location, or ratings
+- View restaurant menus with detailed descriptions and prices
+- Place and customize food orders
+- Real-time order tracking
+- Payment processing
+- Order history and reordering
+- Rating and review system
+
+### For Restaurants
+- Restaurant dashboard for menu management
+- Real-time order notifications
+- Inventory and stock management
+- Order acceptance/rejection
+- Business analytics and reporting
+- Profile management
+
+### For Delivery Personnel
+- Delivery app for order pickup and delivery
+- Navigation assistance
+- Delivery status updates
+- Earnings tracking
+- Profile and availability management
+
+### For Administrators
+- System-wide management dashboard
+- User account management
+- Restaurant approval process
+- Dispute resolution
+- System metrics and analytics
 
 ## System Requirements
 
@@ -87,18 +110,48 @@ KU project food delivery management system that connects restaurants, customers,
    ```
    python main.py
    ```
-2. The application should now start with a graphical user interface
+2. The application will start with the login screen
+
+## User Guide
+
+### Customer Interface
+1. Register a new account or login with existing credentials
+2. Browse restaurants or search for specific cuisines
+3. Select a restaurant to view its menu
+4. Add items to your cart
+5. Review your order and proceed to checkout
+6. Track your order status in real-time
+7. Rate and review after delivery
+
+### Restaurant Interface
+1. Login with restaurant credentials
+2. Manage your menu (add, update, or remove items)
+3. View and process incoming orders
+4. Update inventory and availability
+5. View ratings and customer feedback
+
+### Delivery Personnel Interface
+1. Login with delivery personnel credentials
+2. View available orders for pickup
+3. Accept delivery assignments
+4. Update delivery status
+5. Complete deliveries and confirm with customers
+
+### Admin Interface
+1. Login with admin credentials
+2. Manage users, restaurants, and delivery personnel
+3. View system metrics and reports
+4. Handle disputes and issues
+5. Configure system settings
 
 ## Troubleshooting
 
 ### Common Issues
 
-1. **"ModuleNotFoundError"**: Make sure you've installed all requirements with `pip install -r requirements.txt`
-
+1. **Login Problems**: Reset your password or contact support
 2. **Database Connection Error**: 
    - Verify your MySQL server is running
    - Check your `.env` file has correct credentials
-   - Ensure the database exists
 
 3. **Application Won't Start**:
    - Make sure Python is in your PATH
@@ -110,5 +163,4 @@ KU project food delivery management system that connects restaurants, customers,
 If you encounter any issues not covered here, please:
 1. Check the console output for error messages
 2. Verify all installation steps were completed
-3. Ensure MySQL server is running
-4. Contact us or initiate a pull request when necessary
+3. Contact us through the support section in the app
