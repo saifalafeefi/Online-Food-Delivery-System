@@ -407,7 +407,6 @@ class RestaurantDashboard(QWidget):
                 "Pending": "New",
                 "Confirmed": "New",
                 "Preparing": "Preparing", 
-                "Ready for Pickup": "Ready for Pickup",
                 "On Delivery": "Ready for Pickup",
                 "Delivered": "Completed",
                 "Cancelled": "Cancelled"
@@ -565,22 +564,37 @@ class RestaurantDashboard(QWidget):
             self.order_layouts[tab_status].addWidget(card)
     
     def update_order_status(self, order_id, new_status):
-        """Update the status of an order"""
+        """Update an order's status"""
+        # Map UI status names to database enum values
+        status_db_map = {
+            "Confirmed": "Confirmed",
+            "Preparing": "Preparing",
+            "Ready for Pickup": "On Delivery",  # This MUST match the database enum value
+            "Completed": "Delivered",
+            "Cancelled": "Cancelled"
+        }
+        
+        # Get the database enum value
+        db_status = status_db_map.get(new_status, new_status)
+        
+        # Update order status in database
         try:
-            query = """
-            UPDATE orders 
-            SET delivery_status = %s
-            WHERE order_id = %s
-            """
-            result = execute_query(query, (new_status, order_id), fetch=False)
+            query = "UPDATE orders SET delivery_status = %s WHERE order_id = %s"
+            result = execute_query(query, (db_status, order_id), fetch=False)
             
             if result is not None:
-                QMessageBox.information(self, "Success", f"Order #{order_id} updated to {new_status}")
+                print(f"Order #{order_id} status updated to {db_status} successfully")
+                QMessageBox.information(self, "Success", f"Order #{order_id} status updated to {new_status}")
+                # Refresh orders
                 self.load_all_orders()
+                # Also refresh dashboard stats when order status changes
+                self.load_dashboard_stats()
             else:
-                QMessageBox.critical(self, "Error", "Failed to update order status")
+                print(f"Failed to update Order #{order_id} status to {db_status}")
+                QMessageBox.warning(self, "Error", "Failed to update order status")
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"An error occurred: {str(e)}")
+            print(f"Error updating order status: {e}")
+            QMessageBox.critical(self, "Error", f"Failed to update order status: {str(e)}")
     
     def create_menu_page(self):
         page = QWidget()

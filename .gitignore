@@ -1,2 +1,14 @@
 .env
 /__pycache__
+ui/restaurant/__pycache__/dashboard.cpython-311.pyc
+ui/delivery/dashboard.py
+ui/delivery/__pycache__/dashboard.cpython-311.pyc
+ui/customer/__pycache__/restaurant_view.cpython-311.pyc
+ui/customer/__pycache__/dashboard.cpython-311.pyc
+ui/admin/__pycache__/dashboard.cpython-311.pyc
+ui/__pycache__/login.cpython-311.pyc
+ui/__pycache__/__init__.cpython-311.pyc
+settings/login.json
+auth/__pycache__/user.cpython-311.pyc
+auth/__pycache__/__init__.cpython-311.pyc
+.env

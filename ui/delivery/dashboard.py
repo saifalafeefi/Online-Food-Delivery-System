@@ -3,9 +3,11 @@ from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QPushButton,
                             QSizePolicy, QSpacerItem, QStackedWidget, QMessageBox,
                             QTableWidget, QTableWidgetItem, QHeaderView, QFormLayout,
                             QLineEdit, QComboBox, QRadioButton, QButtonGroup)
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import Qt, pyqtSignal, QTimer
 from PyQt6.QtGui import QFont, QIcon, QPixmap
 from db_utils import execute_query
+from datetime import datetime
+import os
 
 class DeliveryDashboard(QWidget):
     logout_requested = pyqtSignal()
@@ -18,6 +20,12 @@ class DeliveryDashboard(QWidget):
         self.delivery_person_info = None
         self.is_available = False
         self._source_call = None  # Track source of method calls
+        
+        # Set up auto-refresh timer
+        self.refresh_timer = QTimer(self)
+        self.refresh_timer.timeout.connect(self.auto_refresh)
+        self.refresh_timer.start(10000)  # Refresh every 10 seconds
+        
         self.initUI()
         # Load delivery person info after UI is initialized
         self.load_delivery_person_info()
@@ -106,19 +114,6 @@ class DeliveryDashboard(QWidget):
         user_info_layout = QVBoxLayout(user_info)
         user_info_layout.setContentsMargins(0, 0, 0, 0)  # Remove internal margins
         
-        # Create image container with dark background
-        image_container = QFrame()
-        image_container.setObjectName("image-container")
-        image_layout = QVBoxLayout(image_container)
-        image_layout.setContentsMargins(0, 0, 0, 0)
-        
-        self.profile_pic = QLabel()
-        self.profile_pic.setObjectName("profile-pic")
-        self.profile_pic.setPixmap(QPixmap("assets/img/delivery-avatar.png").scaled(80, 80, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
-        self.profile_pic.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        
-        image_layout.addWidget(self.profile_pic)
-        
         welcome_label = QLabel(f"Welcome, {self.user.username}")
         welcome_label.setObjectName("welcome-label")
         welcome_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -134,7 +129,6 @@ class DeliveryDashboard(QWidget):
             self.status_btn.setStyleSheet("background-color: #c0392b;")
         self.status_btn.clicked.connect(self.toggle_status)
         
-        user_info_layout.addWidget(image_container)
         user_info_layout.addWidget(welcome_label)
         user_info_layout.addWidget(self.status_btn)
         sidebar_layout.addWidget(user_info)
@@ -203,16 +197,6 @@ class DeliveryDashboard(QWidget):
                 margin-bottom: 15px;
                 background-color: #243342;
                 border-radius: 8px;
-            }
-            #image-container {
-                background-color: transparent;
-                margin: 0;
-                padding: 0;
-            }
-            #profile-pic {
-                background-color: transparent;
-                padding: 0;
-                margin: 0;
             }
             #welcome-label {
                 color: white;
@@ -340,187 +324,137 @@ class DeliveryDashboard(QWidget):
             self.logout_requested.emit()
     
     def load_new_orders(self):
-        """Load new orders ready for pickup"""
-        # Clear existing orders
-        while self.new_orders_layout.count():
-            item = self.new_orders_layout.takeAt(0)
-            widget = item.widget()
-            if widget:
-                widget.deleteLater()
-        
+        """Load new orders that are ready for pickup and not assigned"""
         try:
-            # Get orders ready for pickup
-            orders = execute_query("""
-                SELECT o.*, r.name as restaurant_name, r.address as restaurant_address,
-                      c.name as customer_name, c.address as customer_address,
-                      c.phone as customer_phone
+            self.clear_new_orders_layout()
+            
+            if not hasattr(self, "user") or not self.user:
+                self.display_no_orders_message(self.new_orders_container, "No user information available")
+                return
+            
+            # Get delivery person info
+            if not self.delivery_person_id:
+                self.display_no_orders_message(self.new_orders_container, "No delivery profile found. Please update your profile.")
+                return
+            
+            # Get vehicle type
+            vehicle_query = "SELECT vehicle_type FROM delivery_personnel WHERE delivery_person_id = %s"
+            vehicle_result = execute_query(vehicle_query, (self.delivery_person_id,))
+            
+            if not vehicle_result:
+                self.display_no_orders_message(self.new_orders_container, "Could not retrieve vehicle information.")
+                return
+            
+            vehicle_type = vehicle_result[0]['vehicle_type']
+            
+            # Get orders that are ready for pickup and not assigned
+            query = """
+                SELECT o.order_id, o.order_date, 
+                       r.name as restaurant_name, r.address as restaurant_address, 
+                       c.name as customer_name, c.address as customer_address, c.phone as customer_phone, 
+                       o.total_amount 
                 FROM orders o
                 JOIN restaurants r ON o.restaurant_id = r.restaurant_id
                 JOIN customers c ON o.customer_id = c.customer_id
-                WHERE o.delivery_status = 'Ready for Pickup' AND o.delivery_person_id IS NULL
-                ORDER BY o.order_time ASC
-            """)
+                WHERE o.delivery_status = 'On Delivery'
+                AND o.delivery_person_id IS NULL
+                ORDER BY o.order_date DESC
+            """
+            
+            print("DEBUG - Querying for ready orders with SQL:", query)
+            orders = execute_query(query)
+            print(f"DEBUG - Found {len(orders) if orders else 0} ready orders")
             
             if not orders:
-                no_orders = QLabel("No orders available for pickup at this time.")
-                no_orders.setAlignment(Qt.AlignmentFlag.AlignCenter)
-                self.new_orders_layout.addWidget(no_orders)
+                self.display_no_orders_message(self.new_orders_container, "No new orders available for pickup")
                 return
             
-            # Create order cards
+            # Add each order to the layout
             for order in orders:
-                order_card = self._create_order_card(order, is_new=True)
+                order_id = order['order_id']
+                order_date = order['order_date']
+                restaurant_name = order['restaurant_name']
+                restaurant_address = order['restaurant_address']
+                customer_name = order['customer_name']
+                customer_address = order['customer_address']
+                customer_phone = order['customer_phone']
+                total_amount = order['total_amount']
+                
+                # Format the date for better readability
+                try:
+                    date_obj = datetime.strptime(str(order_date), "%Y-%m-%d %H:%M:%S")
+                except (ValueError, TypeError):
+                    date_obj = datetime.now()
+                
+                order_card = self.create_new_order_card(
+                    order_id, date_obj, restaurant_name, restaurant_address,
+                    customer_name, customer_address, customer_phone, total_amount
+                )
                 self.new_orders_layout.addWidget(order_card)
-        
-        except Exception as e:
-            print(f"Error loading new orders: {e}")
-            error_label = QLabel(f"Error loading orders: {str(e)}")
-            error_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            self.new_orders_layout.addWidget(error_label)
-    
-    def _create_order_card(self, order, is_new=False, is_active=False):
-        """Create a card UI for an order"""
-        card = QFrame()
-        card.setObjectName("order-card")
-        card_layout = QVBoxLayout(card)
-        
-        # Header with order ID and time
-        header = QLabel(f"Order #{order['order_id']} - {order['order_time'].strftime('%Y-%m-%d %H:%M')}")
-        header.setObjectName("order-header")
-        
-        # Restaurant and customer info
-        restaurant = QLabel(f"Restaurant: {order['restaurant_name']}")
-        restaurant_address = QLabel(f"Address: {order['restaurant_address']}")
-        
-        customer = QLabel(f"Customer: {order['customer_name']}")
-        customer_address = QLabel(f"Delivery to: {order['customer_address']}")
-        customer_phone = QLabel(f"Phone: {order['customer_phone']}")
-        
-        # Amount
-        amount = QLabel(f"Order Total: ${float(order['total_amount']):.2f}")
-        amount.setObjectName("order-amount")
-        
-        # Add to layout
-        card_layout.addWidget(header)
-        card_layout.addWidget(restaurant)
-        card_layout.addWidget(restaurant_address)
-        card_layout.addWidget(QLabel("")) # Spacer
-        card_layout.addWidget(customer)
-        card_layout.addWidget(customer_address)
-        card_layout.addWidget(customer_phone)
-        card_layout.addWidget(QLabel("")) # Spacer
-        card_layout.addWidget(amount)
-        
-        # Add action button based on card type
-        if is_new:
-            accept_btn = QPushButton("Accept Delivery")
-            accept_btn.setObjectName("accept-button")
-            accept_btn.clicked.connect(lambda: self.accept_order(order['order_id']))
-            card_layout.addWidget(accept_btn)
-        elif is_active:
-            complete_btn = QPushButton("Complete Delivery")
-            complete_btn.setObjectName("complete-button")
-            complete_btn.clicked.connect(lambda: self.complete_delivery(order['order_id']))
-            card_layout.addWidget(complete_btn)
-        
-        return card
-    
-    def accept_order(self, order_id):
-        """Accept an order for delivery"""
-        try:
-            # Update order status and assign delivery person
-            query = """
-            UPDATE orders 
-            SET delivery_status = 'Out for Delivery', delivery_person_id = %s
-            WHERE order_id = %s
-            """
-            result = execute_query(query, (self.delivery_person_id, order_id), fetch=False)
             
-            if result is not None:
-                QMessageBox.information(self, "Success", "Order accepted for delivery")
-                # Refresh pages
-                self.load_new_orders()
-                self.load_active_deliveries()
-                self.show_active_deliveries()
-            else:
-                QMessageBox.critical(self, "Error", "Failed to accept order")
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"An error occurred: {str(e)}")
+            self.display_no_orders_message(self.new_orders_container, f"Error loading orders: {str(e)}")
+            print(f"Error loading new orders: {str(e)}")
     
     def load_active_deliveries(self):
-        """Load active deliveries for the delivery person"""
-        # Clear existing deliveries
-        while self.active_deliveries_layout.count():
-            item = self.active_deliveries_layout.takeAt(0)
-            widget = item.widget()
-            if widget:
-                widget.deleteLater()
-        
-        if not self.delivery_person_id:
-            no_deliveries = QLabel("No active deliveries.")
-            no_deliveries.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            self.active_deliveries_layout.addWidget(no_deliveries)
-            return
-        
+        """Load active deliveries for the current delivery person"""
         try:
-            # Get active deliveries
-            orders = execute_query("""
-                SELECT o.*, r.name as restaurant_name, r.address as restaurant_address,
-                      c.name as customer_name, c.address as customer_address,
-                      c.phone as customer_phone
+            self.clear_active_deliveries_layout()
+            
+            if not hasattr(self, "user") or not self.user:
+                self.display_no_orders_message(self.active_deliveries_container, "No user information available")
+                return
+            
+            # Get delivery person info
+            if not self.delivery_person_id:
+                self.display_no_orders_message(self.active_deliveries_container, "No delivery profile found. Please update your profile.")
+                return
+            
+            # Get orders assigned to this delivery person that are on delivery
+            query = """
+                SELECT o.order_id, o.order_date, 
+                       r.name as restaurant_name, r.address as restaurant_address, 
+                       c.name as customer_name, c.address as customer_address, c.phone as customer_phone, 
+                       o.total_amount 
                 FROM orders o
                 JOIN restaurants r ON o.restaurant_id = r.restaurant_id
                 JOIN customers c ON o.customer_id = c.customer_id
-                WHERE o.delivery_person_id = %s AND o.delivery_status = 'Out for Delivery'
-                ORDER BY o.order_time ASC
-            """, (self.delivery_person_id,))
+                WHERE o.delivery_status = 'On Delivery'
+                AND o.delivery_person_id = %s
+                ORDER BY o.order_date DESC
+            """
+            deliveries = execute_query(query, (self.delivery_person_id,))
             
-            if not orders:
-                no_deliveries = QLabel("No active deliveries.")
-                no_deliveries.setAlignment(Qt.AlignmentFlag.AlignCenter)
-                self.active_deliveries_layout.addWidget(no_deliveries)
+            if not deliveries:
+                self.display_no_orders_message(self.active_deliveries_container, "No active deliveries")
                 return
             
-            # Create delivery cards
-            for order in orders:
-                order_card = self._create_order_card(order, is_new=False)
-                self.active_deliveries_layout.addWidget(order_card)
+            # Add each delivery to the layout
+            for delivery in deliveries:
+                order_id = delivery['order_id']
+                order_date = delivery['order_date']
+                restaurant_name = delivery['restaurant_name']
+                restaurant_address = delivery['restaurant_address']
+                customer_name = delivery['customer_name']
+                customer_address = delivery['customer_address']
+                customer_phone = delivery['customer_phone']
+                total_amount = delivery['total_amount']
+                
+                # Format the date for better readability
+                try:
+                    date_obj = datetime.strptime(str(order_date), "%Y-%m-%d %H:%M:%S")
+                except (ValueError, TypeError):
+                    date_obj = datetime.now()
+                
+                delivery_card = self.create_active_delivery_card(
+                    order_id, date_obj, restaurant_name, restaurant_address,
+                    customer_name, customer_address, customer_phone, total_amount
+                )
+                self.active_deliveries_layout.addWidget(delivery_card)
                 
         except Exception as e:
-            print(f"Error loading active deliveries: {e}")
-            error_label = QLabel(f"Error loading deliveries: {str(e)}")
-            error_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            self.active_deliveries_layout.addWidget(error_label)
-    
-    def complete_delivery(self, order_id):
-        """Mark delivery as completed"""
-        try:
-            # Update order status
-            query = """
-            UPDATE orders 
-            SET delivery_status = 'Delivered', actual_delivery_time = NOW()
-            WHERE order_id = %s
-            """
-            result = execute_query(query, (order_id,), fetch=False)
-            
-            if result is not None:
-                QMessageBox.information(self, "Success", "Delivery marked as completed")
-                # Update delivery person status if needed
-                query = """
-                UPDATE delivery_personnel 
-                SET total_deliveries = total_deliveries + 1
-                WHERE delivery_person_id = %s
-                """
-                execute_query(query, (self.delivery_person_id,), fetch=False)
-                
-                # Refresh pages
-                self.load_active_deliveries()
-                self.load_delivery_history()
-                self.load_earnings()
-            else:
-                QMessageBox.critical(self, "Error", "Failed to complete delivery")
-        except Exception as e:
-            QMessageBox.critical(self, "Error", f"An error occurred: {str(e)}")
+            self.display_no_orders_message(self.active_deliveries_container, f"Error loading deliveries: {str(e)}")
+            print(f"Error loading active deliveries: {str(e)}")
     
     def load_earnings(self):
         """Load earnings for delivery person"""
@@ -571,45 +505,95 @@ class DeliveryDashboard(QWidget):
             self.avg_rating_value.setText("Error")
     
     def load_delivery_history(self):
-        """Load delivery history for the delivery person"""
-        # Clear existing history
-        self.history_table.setRowCount(0)
-        
-        if not self.delivery_person_id:
-            return
-        
+        """Load delivery history for the current delivery person"""
         try:
-            # Get delivery history
-            orders = execute_query("""
-                SELECT o.order_id, o.order_time, o.total_amount, 
-                       r.name as restaurant_name, c.name as customer_name
+            self.clear_delivery_history_layout()
+            
+            if not hasattr(self, "user") or not self.user:
+                self.display_no_orders_message(self.delivery_history_container, "No user information available")
+                return
+            
+            # Get delivery person info
+            if not self.delivery_person_id:
+                self.display_no_orders_message(self.delivery_history_container, "No delivery profile found. Please update your profile.")
+                return
+            
+            # Get completed deliveries for this delivery person
+            query = """
+                SELECT o.order_id, o.order_date, r.name as restaurant_name, c.name as customer_name, o.total_amount 
                 FROM orders o
                 JOIN restaurants r ON o.restaurant_id = r.restaurant_id
                 JOIN customers c ON o.customer_id = c.customer_id
-                WHERE o.delivery_person_id = %s AND o.delivery_status = 'Delivered'
-                ORDER BY o.order_time DESC
-            """, (self.delivery_person_id,))
+                WHERE o.delivery_status = 'Delivered'
+                AND o.delivery_person_id = %s
+                ORDER BY o.order_date DESC
+            """
+            history = execute_query(query, (self.delivery_person_id,))
             
-            if not orders:
+            if not history:
+                self.display_no_orders_message(self.delivery_history_container, "No delivery history found")
                 return
             
-            # Add to table
-            self.history_table.setRowCount(len(orders))
+            # Create a table to display delivery history
+            table = QTableWidget()
+            table.setObjectName("delivery-history-table")
+            table.setColumnCount(5)
+            table.setHorizontalHeaderLabels(["Order ID", "Date", "Restaurant", "Customer", "Amount"])
+            table.setRowCount(len(history))
+            table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+            table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+            table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+            table.setStyleSheet("""
+                QTableWidget {
+                    background-color: white;
+                    border: 1px solid #ddd;
+                    border-radius: 5px;
+                }
+                QHeaderView::section {
+                    background-color: #f2f2f2;
+                    padding: 5px;
+                    border: 1px solid #ddd;
+                    font-weight: bold;
+                }
+                QTableWidget::item {
+                    padding: 5px;
+                    border-bottom: 1px solid #eee;
+                }
+            """)
             
-            for i, order in enumerate(orders):
-                order_id = QTableWidgetItem(str(order['order_id']))
-                date = QTableWidgetItem(order['order_time'].strftime("%Y-%m-%d %H:%M"))
-                restaurant = QTableWidgetItem(order['restaurant_name'])
-                customer = QTableWidgetItem(order['customer_name'])
-                amount = QTableWidgetItem(f"${float(order['total_amount']):.2f}")
+            # Populate the table with delivery history
+            for row, delivery in enumerate(history):
+                order_id = delivery['order_id']
+                order_date = delivery['order_date']
+                restaurant_name = delivery['restaurant_name']
+                customer_name = delivery['customer_name']
+                total_amount = delivery['total_amount']
                 
-                self.history_table.setItem(i, 0, order_id)
-                self.history_table.setItem(i, 1, date)
-                self.history_table.setItem(i, 2, restaurant)
-                self.history_table.setItem(i, 3, customer)
-                self.history_table.setItem(i, 4, amount)
+                # Format the date for better readability
+                try:
+                    date_obj = datetime.strptime(str(order_date), "%Y-%m-%d %H:%M:%S")
+                    formatted_date = date_obj.strftime("%b %d, %Y %I:%M %p")
+                except (ValueError, TypeError) as e:
+                    print(f"Date formatting error: {e}, using original date")
+                    formatted_date = str(order_date)
+                
+                # Format the amount with currency symbol
+                try:
+                    formatted_amount = f"${float(total_amount):.2f}"
+                except (ValueError, TypeError):
+                    formatted_amount = f"${0:.2f}"
+                
+                table.setItem(row, 0, QTableWidgetItem(str(order_id)))
+                table.setItem(row, 1, QTableWidgetItem(formatted_date))
+                table.setItem(row, 2, QTableWidgetItem(restaurant_name))
+                table.setItem(row, 3, QTableWidgetItem(customer_name))
+                table.setItem(row, 4, QTableWidgetItem(formatted_amount))
+            
+            self.delivery_history_layout.addWidget(table)
+            
         except Exception as e:
-            print(f"Error loading delivery history: {e}")
+            self.display_no_orders_message(self.delivery_history_container, f"Error loading delivery history: {str(e)}")
+            print(f"Error loading delivery history: {str(e)}")
     
     def create_new_orders_page(self):
         """Create page for new orders available for pickup"""
@@ -624,6 +608,8 @@ class DeliveryDashboard(QWidget):
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(True)
         scroll_content = QWidget()
+        scroll_content.setObjectName("new-orders-container")
+        self.new_orders_container = scroll_content
         
         self.new_orders_layout = QVBoxLayout(scroll_content)
         self.new_orders_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
@@ -654,6 +640,8 @@ class DeliveryDashboard(QWidget):
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(True)
         scroll_content = QWidget()
+        scroll_content.setObjectName("active-deliveries-container")
+        self.active_deliveries_container = scroll_content
         
         self.active_deliveries_layout = QVBoxLayout(scroll_content)
         self.active_deliveries_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
@@ -672,30 +660,71 @@ class DeliveryDashboard(QWidget):
         return page
     
     def create_delivery_history_page(self):
-        """Create page for delivery history"""
-        page = QWidget()
-        layout = QVBoxLayout(page)
+        """Create the delivery history page showing completed deliveries"""
+        # Create main container
+        container = QWidget()
+        container.setObjectName("delivery-history-page")
+        main_layout = QVBoxLayout(container)
+        main_layout.setContentsMargins(0, 0, 0, 0)
         
-        # Header
-        header = QLabel("Delivery History")
-        header.setObjectName("page-header")
+        # Add header
+        header = QWidget()
+        header_layout = QHBoxLayout(header)
         
-        # History table
-        self.history_table = QTableWidget()
-        self.history_table.setColumnCount(5)
-        self.history_table.setHorizontalHeaderLabels(["Order ID", "Date", "Restaurant", "Customer", "Amount"])
-        self.history_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        title = QLabel("Delivery History")
+        title.setObjectName("page-title")
+        title.setStyleSheet("""
+            font-size: 24px;
+            font-weight: bold;
+            margin-bottom: 10px;
+        """)
         
-        # Refresh button
-        refresh_btn = QPushButton("Refresh History")
+        refresh_btn = QPushButton("Refresh")
+        refresh_btn.setObjectName("refresh-btn")
+        refresh_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        refresh_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #4CAF50;
+                color: white;
+                border: none;
+                padding: 8px 16px;
+                border-radius: 4px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #45a049;
+            }
+        """)
         refresh_btn.clicked.connect(self.load_delivery_history)
         
-        # Add to layout
-        layout.addWidget(header)
-        layout.addWidget(refresh_btn)
-        layout.addWidget(self.history_table)
+        header_layout.addWidget(title)
+        header_layout.addStretch()
+        header_layout.addWidget(refresh_btn)
         
-        return page
+        # Create scroll area for history
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll_area.setStyleSheet("""
+            QScrollArea {
+                border: none;
+                background-color: #f9f9f9;
+            }
+        """)
+        
+        # Container for delivery history content
+        self.delivery_history_container = QWidget()
+        self.delivery_history_layout = QVBoxLayout(self.delivery_history_container)
+        self.delivery_history_layout.setContentsMargins(20, 20, 20, 20)
+        self.delivery_history_layout.setSpacing(20)
+        
+        scroll_area.setWidget(self.delivery_history_container)
+        
+        # Add to main layout
+        main_layout.addWidget(header)
+        main_layout.addWidget(scroll_area)
+        
+        return container
     
     def create_profile_page(self):
         """Create profile page for delivery personnel"""
@@ -912,3 +941,262 @@ class DeliveryDashboard(QWidget):
             
         # Reset the source call tracker
         self._source_call = None 
+    
+    def clear_new_orders_layout(self):
+        """Clear all widgets from the new orders layout"""
+        if hasattr(self, 'new_orders_layout'):
+            while self.new_orders_layout.count():
+                item = self.new_orders_layout.takeAt(0)
+                widget = item.widget()
+                if widget:
+                    widget.deleteLater()
+    
+    def clear_active_deliveries_layout(self):
+        """Clear all widgets from the active deliveries layout"""
+        if hasattr(self, 'active_deliveries_layout'):
+            while self.active_deliveries_layout.count():
+                item = self.active_deliveries_layout.takeAt(0)
+                widget = item.widget()
+                if widget:
+                    widget.deleteLater()
+    
+    def display_no_orders_message(self, container, message):
+        """Display a message when no orders are available"""
+        # Create a label with the message
+        label = QLabel(message)
+        label.setObjectName("no-orders-label")
+        label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        label.setStyleSheet("""
+            font-size: 16px;
+            color: #666;
+            padding: 20px;
+        """)
+        
+        # Add it to the appropriate layout
+        if container == self.new_orders_container:
+            self.clear_new_orders_layout()
+            self.new_orders_layout.addWidget(label)
+        elif container == self.active_deliveries_container:
+            self.clear_active_deliveries_layout()
+            self.active_deliveries_layout.addWidget(label)
+        elif container == self.delivery_history_container:
+            self.clear_delivery_history_layout()
+            self.delivery_history_layout.addWidget(label)
+    
+    def create_new_order_card(self, order_id, order_date, restaurant_name, restaurant_address, customer_name, customer_address, customer_phone, total_amount):
+        """Create a card for a new order"""
+        # Format the date
+        formatted_date = order_date.strftime("%Y-%m-%d %H:%M")
+        
+        # Create the card widget
+        card = QWidget()
+        card.setObjectName("order-card")
+        card.setStyleSheet("""
+            #order-card {
+                background-color: white;
+                border-radius: 8px;
+                padding: 15px;
+                margin-bottom: 10px;
+            }
+        """)
+        
+        card_layout = QVBoxLayout(card)
+        
+        # Order header
+        header_layout = QHBoxLayout()
+        order_label = QLabel(f"Order #{order_id}")
+        order_label.setStyleSheet("font-weight: bold; font-size: 16px;")
+        date_label = QLabel(formatted_date)
+        date_label.setStyleSheet("color: #666;")
+        date_label.setAlignment(Qt.AlignmentFlag.AlignRight)
+        
+        header_layout.addWidget(order_label)
+        header_layout.addWidget(date_label)
+        card_layout.addLayout(header_layout)
+        
+        # Restaurant & Customer info
+        info_layout = QGridLayout()
+        info_layout.addWidget(QLabel("Restaurant:"), 0, 0)
+        info_layout.addWidget(QLabel(restaurant_name), 0, 1)
+        info_layout.addWidget(QLabel("Customer:"), 1, 0)
+        info_layout.addWidget(QLabel(customer_name), 1, 1)
+        
+        # Delivery address
+        info_layout.addWidget(QLabel("Delivery Address:"), 2, 0)
+        address = f"{restaurant_address}, {customer_address}"
+        info_layout.addWidget(QLabel(address), 2, 1)
+        
+        # Amount
+        info_layout.addWidget(QLabel("Amount:"), 3, 0)
+        info_layout.addWidget(QLabel(f"${total_amount:.2f}"), 3, 1)
+        
+        card_layout.addLayout(info_layout)
+        
+        # Accept button
+        accept_btn = QPushButton("Accept Delivery")
+        accept_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #4CAF50;
+                color: white;
+                border: none;
+                padding: 8px 16px;
+                border-radius: 4px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #45a049;
+            }
+        """)
+        accept_btn.clicked.connect(lambda: self.accept_delivery(order_id))
+        
+        button_layout = QHBoxLayout()
+        button_layout.addStretch()
+        button_layout.addWidget(accept_btn)
+        card_layout.addLayout(button_layout)
+        
+        # Add the card to the layout
+        self.new_orders_layout.addWidget(card)
+    
+    def create_active_delivery_card(self, order_id, order_date, restaurant_name, restaurant_address, customer_name, customer_address, customer_phone, total_amount):
+        """Create a card for an active delivery"""
+        # Format the date
+        formatted_date = order_date.strftime("%Y-%m-%d %H:%M")
+        
+        # Create the card widget
+        card = QWidget()
+        card.setObjectName("delivery-card")
+        card.setStyleSheet("""
+            #delivery-card {
+                background-color: white;
+                border-radius: 8px;
+                padding: 15px;
+                margin-bottom: 10px;
+            }
+        """)
+        
+        card_layout = QVBoxLayout(card)
+        
+        # Order header
+        header_layout = QHBoxLayout()
+        order_label = QLabel(f"Order #{order_id}")
+        order_label.setStyleSheet("font-weight: bold; font-size: 16px;")
+        date_label = QLabel(formatted_date)
+        date_label.setStyleSheet("color: #666;")
+        date_label.setAlignment(Qt.AlignmentFlag.AlignRight)
+        
+        header_layout.addWidget(order_label)
+        header_layout.addWidget(date_label)
+        card_layout.addLayout(header_layout)
+        
+        # Restaurant & Customer info
+        info_layout = QGridLayout()
+        info_layout.addWidget(QLabel("Restaurant:"), 0, 0)
+        info_layout.addWidget(QLabel(restaurant_name), 0, 1)
+        info_layout.addWidget(QLabel("Customer:"), 1, 0)
+        info_layout.addWidget(QLabel(customer_name), 1, 1)
+        
+        # Delivery address
+        info_layout.addWidget(QLabel("Delivery Address:"), 2, 0)
+        address = f"{restaurant_address}, {customer_address}"
+        info_layout.addWidget(QLabel(address), 2, 1)
+        
+        # Amount
+        info_layout.addWidget(QLabel("Amount:"), 3, 0)
+        info_layout.addWidget(QLabel(f"${total_amount:.2f}"), 3, 1)
+        
+        card_layout.addLayout(info_layout)
+        
+        # Complete button
+        complete_btn = QPushButton("Complete Delivery")
+        complete_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #4CAF50;
+                color: white;
+                border: none;
+                padding: 8px 16px;
+                border-radius: 4px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #45a049;
+            }
+        """)
+        complete_btn.clicked.connect(lambda: self.complete_delivery(order_id))
+        
+        button_layout = QHBoxLayout()
+        button_layout.addStretch()
+        button_layout.addWidget(complete_btn)
+        card_layout.addLayout(button_layout)
+        
+        # Add the card to the layout
+        self.active_deliveries_layout.addWidget(card)
+    
+    def accept_delivery(self, order_id):
+        """Accept a delivery order"""
+        try:
+            if not self.delivery_person_id:
+                QMessageBox.warning(self, "Error", "Delivery personnel profile not found!")
+                return
+            
+            # Update the order status and assign the delivery person
+            query = """
+                UPDATE orders 
+                SET delivery_status = %s, delivery_person_id = %s 
+                WHERE order_id = %s
+            """
+            result = execute_query(query, ("On Delivery", self.delivery_person_id, order_id), fetch=False)
+            
+            if result is not None:
+                QMessageBox.information(self, "Success", f"Order #{order_id} accepted for delivery!")
+                
+                # Refresh the orders
+                self.load_new_orders()
+                self.load_active_deliveries()
+            else:
+                QMessageBox.warning(self, "Error", "Failed to update order. Please try again.")
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to accept delivery: {str(e)}")
+    
+    def complete_delivery(self, order_id):
+        """Mark a delivery as completed"""
+        try:
+            # Update the order status to "Delivered"
+            query = """
+                UPDATE orders 
+                SET delivery_status = %s 
+                WHERE order_id = %s
+            """
+            result = execute_query(query, ("Delivered", order_id), fetch=False)
+            
+            if result is not None:
+                QMessageBox.information(self, "Success", f"Order #{order_id} marked as delivered!")
+                
+                # Refresh the orders
+                self.load_active_deliveries()
+                self.load_delivery_history()
+                self.load_earnings()  # Update earnings
+            else:
+                QMessageBox.warning(self, "Error", "Failed to update order. Please try again.")
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to complete delivery: {str(e)}")
+    
+    def clear_delivery_history_layout(self):
+        """Clear all widgets from the delivery history layout"""
+        if hasattr(self, 'delivery_history_layout') and self.delivery_history_layout:
+            while self.delivery_history_layout.count():
+                item = self.delivery_history_layout.takeAt(0)
+                widget = item.widget()
+                if widget:
+                    widget.deleteLater()
+    
+    def auto_refresh(self):
+        """Automatically refresh data based on current page"""
+        current_widget = self.content_area.currentWidget()
+        if current_widget == self.new_orders_page:
+            self.load_new_orders()
+            print("Auto-refreshed new orders")
+        elif current_widget == self.active_deliveries_page:
+            self.load_active_deliveries()
+            print("Auto-refreshed active deliveries") 
