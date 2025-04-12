@@ -198,7 +198,7 @@ class AdminDashboard(QWidget):
             today_orders = [{'count': 0}]
             
         try:
-            total_revenue = execute_query("SELECT SUM(total_amount) as total FROM orders WHERE order_status = 'Delivered'")
+            total_revenue = execute_query("SELECT SUM(total_amount) as total FROM orders WHERE delivery_status = 'Delivered'")
             if total_revenue is None or total_revenue[0]['total'] is None:
                 total_revenue = [{'total': 0}]
         except:
@@ -209,7 +209,7 @@ class AdminDashboard(QWidget):
             {"title": "Restaurants", "value": str(restaurant_count[0]['count']), "icon": "🏢"},
             {"title": "Active Users", "value": str(user_count[0]['count']), "icon": "👥"},
             {"title": "Orders Today", "value": str(today_orders[0]['count']), "icon": "📦"},
-            {"title": "Total Revenue", "value": f"${float(total_revenue[0]['total']):.2f}", "icon": "💰"}
+            {"title": "Total Revenue", "value": f"AED {float(total_revenue[0]['total']):.2f}", "icon": "💰"}
         ]
         
         for card in stat_cards:
@@ -242,7 +242,7 @@ class AdminDashboard(QWidget):
         try:
             recent_orders = execute_query("""
                 SELECT o.order_id, c.name as customer_name, r.name as restaurant_name, 
-                       o.total_amount, o.order_status 
+                       o.total_amount, o.delivery_status 
                 FROM orders o
                 JOIN customers c ON o.customer_id = c.customer_id
                 JOIN restaurants r ON o.restaurant_id = r.restaurant_id
@@ -256,12 +256,12 @@ class AdminDashboard(QWidget):
                     self.recent_orders_table.setItem(i, 0, QTableWidgetItem(str(order['order_id'])))
                     self.recent_orders_table.setItem(i, 1, QTableWidgetItem(order['customer_name']))
                     self.recent_orders_table.setItem(i, 2, QTableWidgetItem(order['restaurant_name']))
-                    self.recent_orders_table.setItem(i, 3, QTableWidgetItem(f"${float(order['total_amount']):.2f}"))
+                    self.recent_orders_table.setItem(i, 3, QTableWidgetItem(f"AED {float(order['total_amount']):.2f}"))
                     
-                    status_item = QTableWidgetItem(order['order_status'])
-                    if order['order_status'] == 'Delivered':
+                    status_item = QTableWidgetItem(order['delivery_status'])
+                    if order['delivery_status'] == 'Delivered':
                         status_item.setForeground(Qt.GlobalColor.darkGreen)
-                    elif order['order_status'] == 'Cancelled':
+                    elif order['delivery_status'] == 'Cancelled':
                         status_item.setForeground(Qt.GlobalColor.red)
                     self.recent_orders_table.setItem(i, 4, status_item)
             else:
@@ -518,48 +518,107 @@ class AdminDashboard(QWidget):
         user = user[0]
         role = user['role']
         
-        # Get role-specific details
-        details_text = f"Username: {user['username']}\nEmail: {user['email']}\nRole: {role.capitalize()}\n\n"
+        # Create dialog
+        dialog = QDialog(self)
+        dialog.setWindowTitle(f"User Details - {user['username']}")
+        dialog.setMinimumWidth(500)
+        dialog.setStyleSheet("""
+            QDialog {
+                background-color: #2c3e50;
+                color: white;
+            }
+            QLabel {
+                color: white;
+                font-size: 12px;
+            }
+            QGroupBox {
+                color: white;
+                border: 1px solid #7f8c8d;
+                border-radius: 4px;
+                margin-top: 10px;
+                padding-top: 10px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0 3px;
+            }
+            QPushButton {
+                background-color: #3498db;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                padding: 8px 15px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #2980b9;
+            }
+        """)
+        
+        layout = QVBoxLayout(dialog)
+        
+        # Basic user info
+        basic_info = QGroupBox("Basic Information")
+        basic_layout = QFormLayout(basic_info)
+        basic_layout.addRow("Username:", QLabel(user['username']))
+        basic_layout.addRow("Email:", QLabel(user['email']))
+        basic_layout.addRow("Role:", QLabel(role.capitalize()))
+        
+        # Role-specific info
+        role_info = QGroupBox(f"{role.capitalize()} Information")
+        role_layout = QFormLayout(role_info)
         
         if role == "customer":
             customer = execute_query("SELECT * FROM customers WHERE user_id = %s", (user_id,))
             if customer:
-                details_text += f"Name: {customer[0]['name']}\n"
-                details_text += f"Address: {customer[0]['address']}\n"
-                details_text += f"Phone: {customer[0]['phone']}\n"
+                customer = customer[0]
+                role_layout.addRow("Name:", QLabel(customer['name']))
+                role_layout.addRow("Address:", QLabel(customer['address']))
+                role_layout.addRow("Phone:", QLabel(customer['phone']))
                 
                 # Get order count
-                orders = execute_query("SELECT COUNT(*) as count FROM orders WHERE customer_id = %s", (customer[0]['customer_id'],))
+                orders = execute_query("SELECT COUNT(*) as count FROM orders WHERE customer_id = %s", (customer['customer_id'],))
                 if orders:
-                    details_text += f"Total Orders: {orders[0]['count']}\n"
+                    role_layout.addRow("Total Orders:", QLabel(str(orders[0]['count'])))
         
         elif role == "restaurant":
             restaurant = execute_query("SELECT * FROM restaurants WHERE user_id = %s", (user_id,))
             if restaurant:
-                details_text += f"Restaurant Name: {restaurant[0]['name']}\n"
-                details_text += f"Cuisine: {restaurant[0]['cuisine_type']}\n"
-                details_text += f"Address: {restaurant[0]['address']}\n"
+                restaurant = restaurant[0]
+                role_layout.addRow("Restaurant Name:", QLabel(restaurant['name']))
+                role_layout.addRow("Cuisine:", QLabel(restaurant['cuisine_type']))
+                role_layout.addRow("Address:", QLabel(restaurant['address']))
                 
                 # Get menu item count
-                menu_items = execute_query("SELECT COUNT(*) as count FROM menu_items WHERE restaurant_id = %s", (restaurant[0]['restaurant_id'],))
+                menu_items = execute_query("SELECT COUNT(*) as count FROM menus WHERE restaurant_id = %s", (restaurant['restaurant_id'],))
                 if menu_items:
-                    details_text += f"Menu Items: {menu_items[0]['count']}\n"
+                    role_layout.addRow("Menu Items:", QLabel(str(menu_items[0]['count'])))
         
         elif role == "delivery":
             delivery = execute_query("SELECT * FROM delivery_personnel WHERE user_id = %s", (user_id,))
             if delivery:
-                details_text += f"Name: {delivery[0]['name']}\n"
-                details_text += f"Phone: {delivery[0]['phone']}\n"
-                details_text += f"Status: {delivery[0]['status']}\n"
-                details_text += f"Vehicle: {delivery[0].get('vehicle_type', 'Not specified')}\n"
+                delivery = delivery[0]
+                role_layout.addRow("Name:", QLabel(delivery['name']))
+                role_layout.addRow("Phone:", QLabel(delivery['phone']))
+                role_layout.addRow("Status:", QLabel(delivery['status']))
+                role_layout.addRow("Vehicle:", QLabel(delivery.get('vehicle_type', 'Not specified')))
                 
                 # Get delivery count
-                deliveries = execute_query("SELECT COUNT(*) as count FROM orders WHERE delivery_person_id = %s AND order_status = 'Delivered'", (delivery[0]['delivery_person_id'],))
+                deliveries = execute_query("SELECT COUNT(*) as count FROM orders WHERE delivery_person_id = %s AND delivery_status = 'Delivered'", (delivery['delivery_person_id'],))
                 if deliveries:
-                    details_text += f"Completed Deliveries: {deliveries[0]['count']}\n"
+                    role_layout.addRow("Completed Deliveries:", QLabel(str(deliveries[0]['count'])))
         
-        # Show details in a message box
-        QMessageBox.information(self, f"User Details - {user['username']}", details_text)
+        # Add widgets to layout
+        layout.addWidget(basic_info)
+        layout.addWidget(role_info)
+        
+        # Close button
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(dialog.accept)
+        layout.addWidget(close_btn)
+        
+        dialog.exec()
     
     def delete_user(self, user_id):
         # Check if trying to delete admin
@@ -667,9 +726,32 @@ class AdminDashboard(QWidget):
         
         # Table for delivery personnel
         self.delivery_table = QTableWidget()
-        self.delivery_table.setColumnCount(7)
-        self.delivery_table.setHorizontalHeaderLabels(["ID", "Name", "Phone", "Status", "Vehicle Type", "Deliveries", "Actions"])
-        self.delivery_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.delivery_table.setColumnCount(10)
+        self.delivery_table.setHorizontalHeaderLabels([
+            "ID", "Name", "Username", "Email", "Phone", 
+            "Status", "Vehicle", "Deliveries", "Rating", "Actions"
+        ])
+        
+        # Set resize modes for columns
+        header = self.delivery_table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)  # ID
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)  # Name
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)  # Username
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)  # Email
+        header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)  # Phone
+        header.setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents)  # Status
+        header.setSectionResizeMode(6, QHeaderView.ResizeMode.ResizeToContents)  # Vehicle
+        header.setSectionResizeMode(7, QHeaderView.ResizeMode.ResizeToContents)  # Deliveries
+        header.setSectionResizeMode(8, QHeaderView.ResizeMode.ResizeToContents)  # Rating
+        header.setSectionResizeMode(9, QHeaderView.ResizeMode.ResizeToContents)  # Actions
+        
+        self.delivery_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.delivery_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.delivery_table.setAlternatingRowColors(True)
+        
+        # Make rows resizable
+        self.delivery_table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+        self.delivery_table.verticalHeader().setDefaultSectionSize(40)
         
         # Load delivery personnel
         self.load_delivery_personnel()
@@ -689,9 +771,13 @@ class AdminDashboard(QWidget):
             # Build query based on filter
             if status_filter != "All Status":
                 query = """
-                    SELECT dp.*, COUNT(o.order_id) as delivery_count
+                    SELECT dp.*, u.username, u.email, 
+                           COUNT(o.order_id) as delivery_count,
+                           AVG(r.delivery_rating) as avg_rating
                     FROM delivery_personnel dp
-                    LEFT JOIN orders o ON dp.delivery_person_id = o.delivery_person_id AND o.order_status = 'Delivered'
+                    JOIN users u ON dp.user_id = u.user_id
+                    LEFT JOIN orders o ON dp.delivery_person_id = o.delivery_person_id AND o.delivery_status = 'Delivered'
+                    LEFT JOIN ratings r ON r.delivery_person_id = dp.delivery_person_id
                     WHERE dp.status = %s
                     GROUP BY dp.delivery_person_id
                     ORDER BY dp.name
@@ -699,9 +785,13 @@ class AdminDashboard(QWidget):
                 personnel = execute_query(query, (status_filter,))
             else:
                 query = """
-                    SELECT dp.*, COUNT(o.order_id) as delivery_count
+                    SELECT dp.*, u.username, u.email,
+                           COUNT(o.order_id) as delivery_count,
+                           AVG(r.delivery_rating) as avg_rating
                     FROM delivery_personnel dp
-                    LEFT JOIN orders o ON dp.delivery_person_id = o.delivery_person_id AND o.order_status = 'Delivered'
+                    JOIN users u ON dp.user_id = u.user_id
+                    LEFT JOIN orders o ON dp.delivery_person_id = o.delivery_person_id AND o.delivery_status = 'Delivered'
+                    LEFT JOIN ratings r ON r.delivery_person_id = dp.delivery_person_id
                     GROUP BY dp.delivery_person_id
                     ORDER BY dp.name
                 """
@@ -718,6 +808,8 @@ class AdminDashboard(QWidget):
                 # Person details
                 person_id = QTableWidgetItem(str(person['delivery_person_id']))
                 name = QTableWidgetItem(person['name'])
+                username = QTableWidgetItem(person['username'])
+                email = QTableWidgetItem(person['email'])
                 phone = QTableWidgetItem(person['phone'])
                 
                 status_item = QTableWidgetItem(person['status'])
@@ -731,30 +823,40 @@ class AdminDashboard(QWidget):
                 vehicle = QTableWidgetItem(person.get('vehicle_type', 'Not specified'))
                 deliveries = QTableWidgetItem(str(person['delivery_count']))
                 
+                # Rating
+                rating = person.get('avg_rating', 0)
+                rating_item = QTableWidgetItem(f"{rating:.1f}" if rating else "No ratings")
+                
                 self.delivery_table.setItem(i, 0, person_id)
                 self.delivery_table.setItem(i, 1, name)
-                self.delivery_table.setItem(i, 2, phone)
-                self.delivery_table.setItem(i, 3, status_item)
-                self.delivery_table.setItem(i, 4, vehicle)
-                self.delivery_table.setItem(i, 5, deliveries)
+                self.delivery_table.setItem(i, 2, username)
+                self.delivery_table.setItem(i, 3, email)
+                self.delivery_table.setItem(i, 4, phone)
+                self.delivery_table.setItem(i, 5, status_item)
+                self.delivery_table.setItem(i, 6, vehicle)
+                self.delivery_table.setItem(i, 7, deliveries)
+                self.delivery_table.setItem(i, 8, rating_item)
                 
                 # Action buttons
                 actions_widget = QWidget()
                 actions_layout = QHBoxLayout(actions_widget)
                 actions_layout.setContentsMargins(0, 0, 0, 0)
+                actions_layout.setSpacing(5)
                 
                 edit_btn = QPushButton("Edit")
                 edit_btn.setObjectName("action-button")
+                edit_btn.setMinimumWidth(edit_btn.sizeHint().width() + 10)
                 edit_btn.clicked.connect(lambda _, p=person: self.edit_delivery_person(p))
                 
                 delete_btn = QPushButton("Delete")
                 delete_btn.setObjectName("delete-button")
+                delete_btn.setMinimumWidth(delete_btn.sizeHint().width() + 10)
                 delete_btn.clicked.connect(lambda _, pid=person['delivery_person_id']: self.delete_delivery_person(pid))
                 
                 actions_layout.addWidget(edit_btn)
                 actions_layout.addWidget(delete_btn)
                 
-                self.delivery_table.setCellWidget(i, 6, actions_widget)
+                self.delivery_table.setCellWidget(i, 9, actions_widget)
         except Exception as e:
             print(f"Error loading delivery personnel: {e}")
             self.display_db_error_message(self.delivery_table)
@@ -776,7 +878,7 @@ class AdminDashboard(QWidget):
         
         if confirm == QMessageBox.StandardButton.Yes:
             # Check for active deliveries
-            active = execute_query("SELECT COUNT(*) as count FROM orders WHERE delivery_person_id = %s AND order_status = 'Out for Delivery'", (delivery_person_id,))
+            active = execute_query("SELECT COUNT(*) as count FROM orders WHERE delivery_person_id = %s AND delivery_status = 'Out for Delivery'", (delivery_person_id,))
             if active and active[0]['count'] > 0:
                 QMessageBox.warning(self, "Cannot Delete", f"This delivery person has {active[0]['count']} active deliveries. They cannot be deleted until all deliveries are completed.")
                 return
@@ -892,7 +994,7 @@ class AdminDashboard(QWidget):
                 self.orders_table.setItem(i, 2, QTableWidgetItem(order['restaurant_name']))
                 
                 # Amount
-                amount_item = QTableWidgetItem(f"${float(order['total_amount']):.2f}")
+                amount_item = QTableWidgetItem(f"AED {float(order['total_amount']):.2f}")
                 amount_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
                 self.orders_table.setItem(i, 3, amount_item)
                 
@@ -1034,9 +1136,9 @@ class AdminDashboard(QWidget):
                 
                 for i, item in enumerate(items):
                     name_item = QTableWidgetItem(item['dish_name'])
-                    price_item = QTableWidgetItem(f"${float(item['unit_price']):.2f}")
+                    price_item = QTableWidgetItem(f"AED {float(item['unit_price']):.2f}")
                     quantity_item = QTableWidgetItem(str(item['quantity']))
-                    total_item = QTableWidgetItem(f"${float(item['total_price']):.2f}")
+                    total_item = QTableWidgetItem(f"AED {float(item['total_price']):.2f}")
                     
                     items_table.setItem(i, 0, name_item)
                     items_table.setItem(i, 1, price_item)
@@ -1052,11 +1154,11 @@ class AdminDashboard(QWidget):
             # Order totals
             totals_layout = QHBoxLayout()
             
-            subtotal_label = QLabel(f"Subtotal: ${float(order['subtotal']):.2f}")
-            delivery_fee_label = QLabel(f"Delivery Fee: ${float(order['delivery_fee'] or 0):.2f}")
-            tax_label = QLabel(f"Tax: ${float(order['tax'] or 0):.2f}")
+            subtotal_label = QLabel(f"Subtotal: AED {float(order['subtotal']):.2f}")
+            delivery_fee_label = QLabel(f"Delivery Fee: AED {float(order['delivery_fee'] or 0):.2f}")
+            tax_label = QLabel(f"Tax: AED {float(order['tax'] or 0):.2f}")
             
-            total_label = QLabel(f"Total: ${float(order['total_amount']):.2f}")
+            total_label = QLabel(f"Total: AED {float(order['total_amount']):.2f}")
             total_label.setFont(QFont("Arial", 14, QFont.Weight.Bold))
             
             totals_layout.addWidget(subtotal_label)
@@ -1201,8 +1303,38 @@ class RestaurantDialog(QDialog):
     def __init__(self, parent=None, restaurant=None):
         super().__init__(parent)
         self.restaurant = restaurant
-        self.setWindowTitle("Add Restaurant" if not restaurant else "Edit Restaurant")
-        self.setMinimumWidth(500)
+        self.setStyleSheet("""
+            QDialog {
+                background-color: #2c3e50;
+                color: white;
+            }
+            QLabel {
+                color: white;
+                font-size: 12px;
+            }
+            QLineEdit, QComboBox {
+                background-color: #34495e;
+                color: white;
+                border: 1px solid #7f8c8d;
+                border-radius: 4px;
+                padding: 5px;
+                min-height: 25px;
+            }
+            QLineEdit:focus, QComboBox:focus {
+                border: 1px solid #3498db;
+            }
+            QPushButton {
+                background-color: #3498db;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                padding: 8px 15px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #2980b9;
+            }
+        """)
         self.initUI()
     
     def initUI(self):
@@ -1298,6 +1430,57 @@ class DeliveryPersonDialog(QDialog):
     def __init__(self, parent=None, delivery_person=None):
         super().__init__(parent)
         self.delivery_person = delivery_person
+        self.setStyleSheet("""
+            QDialog {
+                background-color: #2c3e50;
+                color: white;
+            }
+            QLabel {
+                color: white;
+                font-size: 12px;
+            }
+            QLineEdit, QComboBox {
+                background-color: #34495e;
+                color: white;
+                border: 1px solid #7f8c8d;
+                border-radius: 4px;
+                padding: 5px;
+                min-height: 25px;
+            }
+            QLineEdit:focus, QComboBox:focus {
+                border: 1px solid #3498db;
+            }
+            QPushButton {
+                background-color: #3498db;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                padding: 8px 15px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #2980b9;
+            }
+            QFrame {
+                background-color: #34495e;
+                border-radius: 4px;
+                padding: 5px;
+            }
+            QRadioButton {
+                color: white;
+                spacing: 5px;
+            }
+            QRadioButton::indicator {
+                width: 15px;
+                height: 15px;
+                border-radius: 7px;
+                border: 2px solid #7f8c8d;
+            }
+            QRadioButton::indicator:checked {
+                background-color: #3498db;
+                border: 2px solid #3498db;
+            }
+        """)
         self.initUI()
         
     def initUI(self):
