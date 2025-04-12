@@ -41,7 +41,7 @@ A comprehensive food delivery platform that connects customers, restaurants, and
 ## System Requirements
 
 - Windows 10 or later
-- Python 3.8 or later
+- Python 3.8 to 3.11 (3.12+ haven't been tested yet)
 - MySQL Server 8.0 or later
 - 4GB RAM minimum
 - 500MB free disk space
@@ -50,7 +50,7 @@ A comprehensive food delivery platform that connects customers, restaurants, and
 
 ### 1. Install Python
 
-1. Download Python from the [official website](https://www.python.org/downloads/)
+1. Download Python 3.11 from the [official website](https://www.python.org/downloads/)
 2. Run the installer
 3. **Important**: Check the box that says "Add Python to PATH" during installation
 4. Complete the installation
