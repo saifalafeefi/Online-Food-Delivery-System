@@ -94,7 +94,7 @@ if __name__ == "__main__":
         }
         QWidget {
             background-color: transparent;
-            font-family: 'Segoe UI', Arial, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen-Sans, Ubuntu, Cantarell, 'Helvetica Neue', sans-serif;
         }
         QStackedWidget, #content-area {
             background-color: #f8f9fa;
@@ -130,8 +130,21 @@ if __name__ == "__main__":
     # Test database connection
     if not test_connection():
         from PyQt6.QtWidgets import QMessageBox
-        QMessageBox.critical(None, "Database Error", 
-                           "Failed to connect to database. Please check your settings in the .env file.")
+        msg = QMessageBox()
+        msg.setIcon(QMessageBox.Icon.Critical)
+        msg.setWindowTitle("Database Error")
+        msg.setText("Failed to connect to database")
+        msg.setInformativeText("Please check your database settings and make sure MySQL is running.")
+        msg.setDetailedText("""
+Common issues:
+1. MySQL server might not be running
+2. Incorrect username or password in .env file
+3. Database 'food_delivery' might not exist
+4. Network connectivity issues
+
+Please check the console output for more details.
+""")
+        msg.exec()
         sys.exit(1)
     
     # Start the application

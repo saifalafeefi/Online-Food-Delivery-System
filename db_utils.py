@@ -1,40 +1,86 @@
 import mysql.connector
 from dotenv import load_dotenv
 import os
+import platform
 
-#environment variables
+# Load environment variables from .env file first
 load_dotenv()
+
+# Then set defaults if not found
+if 'DB_HOST' not in os.environ:
+    os.environ['DB_HOST'] = 'localhost'
+    os.environ['DB_USER'] = 'root'
+    os.environ['DB_PASSWORD'] = '12345678'
+    os.environ['DB_NAME'] = 'food_delivery'
+
+def get_connection_config():
+    """Get database connection configuration based on platform"""
+    config = {
+        'host': os.environ.get('DB_HOST'),
+        'user': os.environ.get('DB_USER'),
+        'password': os.environ.get('DB_PASSWORD'),
+        'use_pure': True  # Use pure Python implementation for compatibility
+    }
+    
+    # Add database name if it exists (not for initial setup)
+    if os.environ.get('DB_NAME'):
+        config['database'] = os.environ.get('DB_NAME')
+    
+    # Handle different authentication methods based on platform
+    if platform.system() == 'Darwin':  # macOS
+        # Try without auth_plugin first
+        try:
+            test_conn = mysql.connector.connect(**config)
+            test_conn.close()
+            return config
+        except mysql.connector.Error:
+            # If that fails, try with auth_plugin
+            config['auth_plugin'] = 'caching_sha2_password'
+    
+    return config
 
 def test_connection():
     """Test the database connection and return True if successful, False otherwise"""
+    print("\nTesting database connection...")
+    print(f"Platform: {platform.system()}")
+    print(f"Using configuration:")
+    config = get_connection_config()
+    for key, value in config.items():
+        if key != 'password':  # Don't print password
+            print(f"  {key}: {value}")
+    
     try:
-        connection = get_db_connection()
+        connection = mysql.connector.connect(**config)
         if connection and connection.is_connected():
             db_info = connection.get_server_info()
-            print(f"Connected to MySQL Server version {db_info}")
+            print(f"✓ Connected to MySQL Server version {db_info}")
             cursor = connection.cursor()
             cursor.execute("SELECT DATABASE();")
             db_name = cursor.fetchone()[0]
-            print(f"Connected to database: {db_name}")
+            print(f"✓ Connected to database: {db_name}")
             cursor.close()
             connection.close()
             return True
         return False
     except mysql.connector.Error as err:
-        print(f"Error testing connection: {err}")
+        print(f"✗ Error testing connection: {err}")
+        if err.errno == mysql.connector.errorcode.ER_ACCESS_DENIED_ERROR:
+            print("  Please check your username and password")
+        elif err.errno == mysql.connector.errorcode.ER_BAD_DB_ERROR:
+            print("  Database does not exist")
         return False
 
 def get_db_connection():
+    """Get database connection using platform-specific configuration"""
     try:
-        connection = mysql.connector.connect(
-            host=os.getenv('DB_HOST'),
-            user=os.getenv('DB_USER'),
-            password=os.getenv('DB_PASSWORD'),
-            database=os.getenv('DB_NAME')
-        )
+        connection = mysql.connector.connect(**get_connection_config())
         return connection
     except mysql.connector.Error as err:
         print(f"Error connecting to database: {err}")
+        if err.errno == mysql.connector.errorcode.ER_ACCESS_DENIED_ERROR:
+            print("Check your username and password")
+        elif err.errno == mysql.connector.errorcode.ER_BAD_DB_ERROR:
+            print("Database does not exist")
         return None
 
 def execute_query(query, params=None, fetch=True):

@@ -40,7 +40,8 @@ A comprehensive food delivery platform that connects customers, restaurants, and
 
 ## System Requirements
 
-- Windows 10 or later
+### Windows/macOS
+- Windows 10 or later / macOS 10.14 (Mojave) or later
 - Python 3.8 to 3.11 (3.12+ haven't been tested yet)
 - MySQL Server 8.0 or later
 - 4GB RAM minimum
@@ -50,56 +51,96 @@ A comprehensive food delivery platform that connects customers, restaurants, and
 
 ### 1. Install Python
 
+#### Windows
 1. Download Python 3.11 from the [official website](https://www.python.org/downloads/)
 2. Run the installer
 3. **Important**: Check the box that says "Add Python to PATH" during installation
 4. Complete the installation
 
+#### macOS
+1. Install Homebrew if you don't have it:
+   ```bash
+   /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+   ```
+2. Install Python using Homebrew:
+   ```bash
+   brew install python@3.11
+   ```
+
 ### 2. Install MySQL
 
+#### Windows
 1. Download MySQL Server from the [official website](https://dev.mysql.com/downloads/mysql/)
 2. Run the installer
 3. Choose "Developer Default" installation type
 4. Follow the installation wizard
 5. **Important**: Remember the root password you set during installation
 
+#### macOS
+1. Install MySQL using Homebrew:
+   ```bash
+   brew install mysql
+   ```
+2. Start MySQL service:
+   ```bash
+   brew services start mysql
+   ```
+3. Set root password:
+   ```bash
+   mysql_secure_installation
+   ```
+
 ### 3. Clone the Repository
 
 1. Download and install [Git](https://git-scm.com/downloads) if you don't have it
-2. Open Command Prompt or PowerShell
+2. Open Command Prompt (Windows) or Terminal (macOS)
 3. Navigate to your desired directory
 4. Run the following command:
-   ```
+   ```bash
    git clone https://github.com/saifalafeefi/Online-Food-Delivery-System.git
    ```
 5. Navigate to the project directory:
-   ```
+   ```bash
    cd Online-Food-Delivery-System
    ```
 
 ### 4. Configure Environment Variables
 
 1. Create a new file named `.env` in the project root directory
-2. Add the following content (replace with your actual MySQL credentials):
-   ```
-   DB_HOST=localhost
-   DB_USER=root
-   DB_PASSWORD=your_mysql_password
-   DB_NAME=food_delivery
-   ```
+2. Add the following content:
+
+```
+DB_HOST=localhost
+DB_USER=root
+DB_PASSWORD=your_mysql_password
+DB_NAME=food_delivery
+```
 
 ### 5. Install Required Python Packages
 
-1. Open Command Prompt or PowerShell in the project directory
-2. Run the following command:
-   ```
-   pip install -r requirements.txt
-   ```
+1. Create and activate a virtual environment:
+
+#### Windows
+```bash
+python -m venv .venv
+.venv\Scripts\activate
+```
+
+#### macOS
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+```
+
+2. Install the required packages:
+```bash
+pip install -r requirements.txt
+```
 
 ### 6. Set Up the Database
 
 1. In the project directory, run:
-   ```
+   ```bash
    python setup_database.py
    ```
 2. This will create the database and all necessary tables automatically
@@ -107,7 +148,7 @@ A comprehensive food delivery platform that connects customers, restaurants, and
 ### 7. Launch the Application
 
 1. In the project directory, run:
-   ```
+   ```bash
    python main.py
    ```
 2. The application will start with the login screen
@@ -148,15 +189,37 @@ A comprehensive food delivery platform that connects customers, restaurants, and
 
 ### Common Issues
 
-1. **Login Problems**: Reset your password or contact support
-2. **Database Connection Error**: 
-   - Verify your MySQL server is running
+1. **Database Connection Error**:
+   - Windows: Verify your MySQL server is running (check Services)
+   - macOS: Run `brew services list` to check MySQL status
    - Check your `.env` file has correct credentials
+   - Make sure MySQL is running on the default port (3306)
+
+2. **Login Problems**:
+   - Reset your password or contact support
+   - Default admin credentials:
+     - Username: `admin`
+     - Password: `admin123`
 
 3. **Application Won't Start**:
    - Make sure Python is in your PATH
    - Verify the database setup script has been run
    - Check the console for error messages
+   - On macOS, if you see font warnings, they can be safely ignored
+
+### Platform-Specific Issues
+
+#### Windows
+- If you get a "MySQL service not found" error:
+  1. Open Services (services.msc)
+  2. Look for "MySQL80" or similar
+  3. Start the service if it's not running
+
+#### macOS
+- If you get authentication errors:
+  1. Check if MySQL is running: `brew services list`
+  2. Try restarting MySQL: `brew services restart mysql`
+  3. Verify root password: `mysql -u root -p`
 
 ### Getting Help
 

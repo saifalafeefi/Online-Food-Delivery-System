@@ -12,3 +12,4 @@ settings/login.json
 auth/__pycache__/user.cpython-311.pyc
 auth/__pycache__/__init__.cpython-311.pyc
 .env
+/.venv

@@ -1,27 +1,54 @@
 import mysql.connector
 from dotenv import load_dotenv
 import os
+import platform
 from auth.user import User
+from db_utils import get_connection_config
 
-# here we load environment variables
+# Load environment variables
 load_dotenv()
+
+# Explicitly set environment variables
+os.environ['DB_HOST'] = 'localhost'
+os.environ['DB_USER'] = 'root'  # Use root since we know it works
+os.environ['DB_PASSWORD'] = '12345678'
+os.environ['DB_NAME'] = 'food_delivery'
+
+# Print current working directory and env file location
+print(f"Current working directory: {os.getcwd()}")
+print(f"Environment variables set:")
+print(f"DB_HOST: {os.environ.get('DB_HOST')}")
+print(f"DB_USER: {os.environ.get('DB_USER')}")
+print(f"DB_NAME: {os.environ.get('DB_NAME')}")
 
 def create_database():
     try:
+        # Get base configuration without database name
+        config = get_connection_config()
+        if 'database' in config:
+            del config['database']  # Remove database name for initial connection
+        
+        print(f"\nAttempting to connect with:")
+        print(f"Host: {config['host']}")
+        print(f"User: {config['user']}")
+        print(f"System: {platform.system()}")
+        
         # MySQL server connection
-        conn = mysql.connector.connect(
-            host=os.getenv('DB_HOST'),
-            user=os.getenv('DB_USER'),
-            password=os.getenv('DB_PASSWORD')
-        )
+        conn = mysql.connector.connect(**config)
+        print("Connection successful!")
+        
         cursor = conn.cursor()
 
         # Drop existing database if it exists
-        cursor.execute(f"DROP DATABASE IF EXISTS {os.getenv('DB_NAME')}")
+        cursor.execute(f"DROP DATABASE IF EXISTS {os.environ.get('DB_NAME')}")
+        print(f"Dropped database {os.environ.get('DB_NAME')} if it existed")
         
         # Create new database
-        cursor.execute(f"CREATE DATABASE {os.getenv('DB_NAME')}")
-        cursor.execute(f"USE {os.getenv('DB_NAME')}")
+        cursor.execute(f"CREATE DATABASE {os.environ.get('DB_NAME')}")
+        print(f"Created database {os.environ.get('DB_NAME')}")
+        
+        cursor.execute(f"USE {os.environ.get('DB_NAME')}")
+        print(f"Using database {os.environ.get('DB_NAME')}")
 
         #tables
         tables = [
