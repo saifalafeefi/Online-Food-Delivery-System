@@ -11,6 +11,105 @@ from ui.customer.restaurant_view import RestaurantView
 from db_utils import execute_query
 
 
+class SearchDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Search")
+        self.setMinimumWidth(400)
+        self.initUI()
+        
+    def initUI(self):
+        layout = QVBoxLayout(self)
+        
+        # Search type selection
+        self.search_type = QComboBox()
+        self.search_type.addItems(["Restaurants", "Menu Items", "Orders"])
+        self.search_type.currentTextChanged.connect(self.update_search_fields)
+        layout.addWidget(QLabel("Search Type:"))
+        layout.addWidget(self.search_type)
+        
+        # Common search field
+        self.search_term = QLineEdit()
+        self.search_term.setPlaceholderText("Enter search term...")
+        layout.addWidget(QLabel("Search Term:"))
+        layout.addWidget(self.search_term)
+        
+        # Restaurant specific fields
+        self.restaurant_fields = QWidget()
+        restaurant_layout = QVBoxLayout(self.restaurant_fields)
+        self.cuisine_type = QComboBox()
+        self.cuisine_type.addItems(["All", "Italian", "Chinese", "Indian", "Mexican", "American", "Japanese"])
+        restaurant_layout.addWidget(QLabel("Cuisine Type:"))
+        restaurant_layout.addWidget(self.cuisine_type)
+        self.location = QLineEdit()
+        self.location.setPlaceholderText("Enter location...")
+        restaurant_layout.addWidget(QLabel("Location:"))
+        restaurant_layout.addWidget(self.location)
+        layout.addWidget(self.restaurant_fields)
+        
+        # Menu items specific fields
+        self.menu_fields = QWidget()
+        menu_layout = QVBoxLayout(self.menu_fields)
+        self.category = QComboBox()
+        self.category.addItems(["All", "Main Course", "Appetizer", "Dessert", "Beverage"])
+        menu_layout.addWidget(QLabel("Category:"))
+        menu_layout.addWidget(self.category)
+        self.min_price = QLineEdit()
+        self.min_price.setPlaceholderText("Min price")
+        menu_layout.addWidget(QLabel("Price Range:"))
+        menu_layout.addWidget(self.min_price)
+        self.max_price = QLineEdit()
+        self.max_price.setPlaceholderText("Max price")
+        menu_layout.addWidget(self.max_price)
+        self.is_vegetarian = QComboBox()
+        self.is_vegetarian.addItems(["All", "Vegetarian", "Non-Vegetarian"])
+        menu_layout.addWidget(QLabel("Dietary:"))
+        menu_layout.addWidget(self.is_vegetarian)
+        layout.addWidget(self.menu_fields)
+        
+        # Orders specific fields
+        self.order_fields = QWidget()
+        order_layout = QVBoxLayout(self.order_fields)
+        self.status = QComboBox()
+        self.status.addItems(["All", "Pending", "Confirmed", "Preparing", "On Delivery", "Delivered", "Cancelled"])
+        order_layout.addWidget(QLabel("Order Status:"))
+        order_layout.addWidget(self.status)
+        self.start_date = QLineEdit()
+        self.start_date.setPlaceholderText("Start date (YYYY-MM-DD)")
+        order_layout.addWidget(QLabel("Date Range:"))
+        order_layout.addWidget(self.start_date)
+        self.end_date = QLineEdit()
+        self.end_date.setPlaceholderText("End date (YYYY-MM-DD)")
+        order_layout.addWidget(self.end_date)
+        layout.addWidget(self.order_fields)
+        
+        # Buttons
+        buttons_layout = QHBoxLayout()
+        search_btn = QPushButton("Search")
+        search_btn.clicked.connect(self.accept)
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.clicked.connect(self.reject)
+        buttons_layout.addWidget(search_btn)
+        buttons_layout.addWidget(cancel_btn)
+        layout.addLayout(buttons_layout)
+        
+        # Hide all specific fields initially
+        self.restaurant_fields.hide()
+        self.menu_fields.hide()
+        self.order_fields.hide()
+        
+    def update_search_fields(self, search_type):
+        self.restaurant_fields.hide()
+        self.menu_fields.hide()
+        self.order_fields.hide()
+        
+        if search_type == "Restaurants":
+            self.restaurant_fields.show()
+        elif search_type == "Menu Items":
+            self.menu_fields.show()
+        elif search_type == "Orders":
+            self.order_fields.show()
+
 class CustomerDashboard(QWidget):
     logout_requested = pyqtSignal()
     
@@ -215,6 +314,116 @@ class CustomerDashboard(QWidget):
                 color: #f39c12;
                 font-weight: bold;
             }
+            /* Search Dialog Styles */
+            QDialog {
+                background-color: white;
+            }
+            QLabel {
+                color: #2c3e50;
+                font-size: 14px;
+            }
+            QLineEdit, QComboBox {
+                padding: 8px;
+                border: 1px solid #ddd;
+                border-radius: 4px;
+                background-color: white;
+                font-size: 14px;
+            }
+            QLineEdit:focus, QComboBox:focus {
+                border: 1px solid #3498db;
+            }
+            QPushButton {
+                padding: 8px 15px;
+                border: none;
+                border-radius: 4px;
+                background-color: #3498db;
+                color: white;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #2980b9;
+            }
+            /* Menu Item Card Styles */
+            .menu-item-card {
+                background-color: white;
+                border-radius: 8px;
+                padding: 15px;
+                margin: 10px;
+                border: 1px solid #e0e0e0;
+            }
+            .menu-item-card:hover {
+                border: 1px solid #3498db;
+                box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            }
+            .menu-item-name {
+                font-weight: bold;
+                font-size: 16px;
+                color: #2c3e50;
+            }
+            .menu-item-price {
+                font-weight: bold;
+                color: #27ae60;
+            }
+            .menu-item-restaurant {
+                color: #7f8c8d;
+                font-size: 14px;
+            }
+            .menu-item-desc {
+                color: #34495e;
+                font-size: 14px;
+                margin: 10px 0;
+            }
+            #add-to-cart-btn {
+                background-color: #27ae60;
+                color: white;
+            }
+            #add-to-cart-btn:hover {
+                background-color: #219a52;
+            }
+            /* Order Card Styles */
+            .order-card {
+                background-color: white;
+                border-radius: 8px;
+                padding: 15px;
+                margin: 10px;
+                border: 1px solid #e0e0e0;
+            }
+            .order-card:hover {
+                border: 1px solid #3498db;
+                box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            }
+            .order-number {
+                font-weight: bold;
+                font-size: 16px;
+                color: #2c3e50;
+            }
+            .order-date {
+                color: #7f8c8d;
+                font-size: 14px;
+            }
+            .order-restaurant {
+                color: #34495e;
+                font-size: 14px;
+                margin: 5px 0;
+            }
+            .order-status {
+                color: #f39c12;
+                font-weight: bold;
+                font-size: 14px;
+            }
+            .order-total {
+                color: #27ae60;
+                font-weight: bold;
+                font-size: 16px;
+                margin: 5px 0;
+            }
+            #view-details-btn {
+                background-color: #3498db;
+                color: white;
+            }
+            #view-details-btn:hover {
+                background-color: #2980b9;
+            }
         """)
         
         # Start with home page
@@ -268,26 +477,21 @@ class CustomerDashboard(QWidget):
         page = QWidget()
         layout = QVBoxLayout(page)
         
-        # Header
-        header = QLabel("Browse Restaurants")
-        header.setAlignment(Qt.AlignmentFlag.AlignLeft)
-        header.setFont(QFont("Arial", 24))
+        # Search bar
+        search_layout = QHBoxLayout()
+        self.search_input = QLineEdit()
+        self.search_input.setPlaceholderText("Search restaurants...")
+        self.search_input.textChanged.connect(self.load_restaurants)
+        search_btn = QPushButton("Advanced Search")
+        search_btn.clicked.connect(self.show_search_dialog)
+        search_layout.addWidget(self.search_input)
+        search_layout.addWidget(search_btn)
+        layout.addLayout(search_layout)
         
         # Restaurants grid
-        scroll_area = QScrollArea()
-        scroll_area.setWidgetResizable(True)
-        scroll_content = QWidget()
-        
-        self.restaurants_grid = QGridLayout(scroll_content)
-        self.restaurants_grid.setSpacing(15)
-        
-        scroll_area.setWidget(scroll_content)
-        
-        layout.addWidget(header)
-        layout.addWidget(scroll_area)
-        
-        # Load restaurants
-        self.load_restaurants()
+        self.restaurants_grid = QGridLayout()
+        self.restaurants_grid.setSpacing(20)
+        layout.addLayout(self.restaurants_grid)
         
         return page
     
@@ -432,8 +636,22 @@ class CustomerDashboard(QWidget):
             if widget:
                 widget.deleteLater()
         
+        # Get search term from input
+        search_term = self.search_input.text().strip()
+        
         # Get restaurants from database
-        restaurants = execute_query("SELECT * FROM restaurants ORDER BY name")
+        restaurants = execute_query("""
+            SELECT r.*, u.email, u.username 
+            FROM restaurants r
+            JOIN users u ON r.user_id = u.user_id
+            ORDER BY r.rating DESC, r.name ASC
+        """)
+        
+        # Filter restaurants if search term exists
+        if search_term:
+            restaurants = [r for r in restaurants if 
+                         search_term.lower() in r['name'].lower() or 
+                         (r['description'] is not None and search_term.lower() in r['description'].lower())]
         
         if not restaurants:
             empty_label = QLabel("No restaurants found")
@@ -584,6 +802,7 @@ class CustomerDashboard(QWidget):
     
     def browse_restaurants(self):
         self.content_area.setCurrentWidget(self.restaurants_page)
+        self.load_restaurants()  # Load restaurants when switching to the page
     
     def my_orders(self):
         self.content_area.setCurrentWidget(self.orders_page)
@@ -1206,5 +1425,193 @@ class CustomerDashboard(QWidget):
         
         # Reset the source call tracker
         self._source_call = None
+
+    def show_search_dialog(self):
+        dialog = SearchDialog(self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            search_type = dialog.search_type.currentText()
+            search_term = dialog.search_term.text()
+            
+            if search_type == "Restaurants":
+                cuisine_type = dialog.cuisine_type.currentText()
+                location = dialog.location.text()
+                self.search_restaurants(search_term, cuisine_type, location)
+            elif search_type == "Menu Items":
+                category = dialog.category.currentText()
+                min_price = dialog.min_price.text()
+                max_price = dialog.max_price.text()
+                is_vegetarian = dialog.is_vegetarian.currentText()
+                self.search_menu_items(search_term, category, min_price, max_price, is_vegetarian)
+            elif search_type == "Orders":
+                status = dialog.status.currentText()
+                start_date = dialog.start_date.text()
+                end_date = dialog.end_date.text()
+                self.search_orders(search_term, status, start_date, end_date)
+    
+    def search_restaurants(self, search_term=None, cuisine_type=None, location=None):
+        from db_utils import search_restaurants
+        results = search_restaurants(search_term, cuisine_type, location)
+        self.display_restaurants(results)
+    
+    def search_menu_items(self, search_term=None, category=None, min_price=None, max_price=None, is_vegetarian=None):
+        from db_utils import search_menu_items
+        is_veg = None
+        if is_vegetarian == "Vegetarian":
+            is_veg = True
+        elif is_vegetarian == "Non-Vegetarian":
+            is_veg = False
+            
+        results = search_menu_items(
+            search_term=search_term,
+            category=category if category != "All" else None,
+            min_price=float(min_price) if min_price else None,
+            max_price=float(max_price) if max_price else None,
+            is_vegetarian=is_veg
+        )
+        self.display_menu_items(results)
+    
+    def search_orders(self, search_term=None, status=None, start_date=None, end_date=None):
+        from db_utils import search_orders
+        results = search_orders(
+            customer_id=self.customer_id,
+            status=status if status != "All" else None,
+            start_date=start_date,
+            end_date=end_date
+        )
+        self.display_orders(results)
+    
+    def display_restaurants(self, restaurants):
+        # Clear existing restaurants
+        while self.restaurants_grid.count():
+            item = self.restaurants_grid.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+        
+        if not restaurants:
+            no_results = QLabel("No restaurants found")
+            no_results.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.restaurants_grid.addWidget(no_results, 0, 0)
+            return
+        
+        row, col = 0, 0
+        for restaurant in restaurants:
+            card = self.create_restaurant_card(restaurant)
+            self.restaurants_grid.addWidget(card, row, col)
+            col += 1
+            if col > 2:  # 3 columns
+                col = 0
+                row += 1
+    
+    def display_menu_items(self, menu_items):
+        # Clear existing items
+        while self.restaurants_grid.count():
+            item = self.restaurants_grid.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+        
+        if not menu_items:
+            no_results = QLabel("No menu items found")
+            no_results.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.restaurants_grid.addWidget(no_results, 0, 0)
+            return
+        
+        row, col = 0, 0
+        for item in menu_items:
+            card = QFrame()
+            card.setObjectName("menu-item-card")
+            card_layout = QVBoxLayout(card)
+            
+            # Item name and price
+            name_price = QHBoxLayout()
+            name_label = QLabel(item['dish_name'])
+            name_label.setObjectName("menu-item-name")
+            price_label = QLabel(f"${item['price']:.2f}")
+            price_label.setObjectName("menu-item-price")
+            name_price.addWidget(name_label)
+            name_price.addStretch()
+            name_price.addWidget(price_label)
+            
+            # Restaurant name
+            restaurant_label = QLabel(f"From: {item['restaurant_name']}")
+            restaurant_label.setObjectName("menu-item-restaurant")
+            
+            # Description
+            desc_label = QLabel(item['description'])
+            desc_label.setObjectName("menu-item-desc")
+            desc_label.setWordWrap(True)
+            
+            # Add to cart button
+            add_to_cart_btn = QPushButton("Add to Cart")
+            add_to_cart_btn.setObjectName("add-to-cart-btn")
+            add_to_cart_btn.clicked.connect(lambda checked, i=item: self.handle_add_to_cart(i, 1))
+            
+            card_layout.addLayout(name_price)
+            card_layout.addWidget(restaurant_label)
+            card_layout.addWidget(desc_label)
+            card_layout.addWidget(add_to_cart_btn)
+            
+            self.restaurants_grid.addWidget(card, row, col)
+            col += 1
+            if col > 2:  # 3 columns
+                col = 0
+                row += 1
+    
+    def display_orders(self, orders):
+        # Clear existing items
+        while self.restaurants_grid.count():
+            item = self.restaurants_grid.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+        
+        if not orders:
+            no_results = QLabel("No orders found")
+            no_results.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.restaurants_grid.addWidget(no_results, 0, 0)
+            return
+        
+        row, col = 0, 0
+        for order in orders:
+            card = QFrame()
+            card.setObjectName("order-card")
+            card_layout = QVBoxLayout(card)
+            
+            # Order number and date
+            order_header = QHBoxLayout()
+            order_num = QLabel(f"Order #{order['order_number']}")
+            order_num.setObjectName("order-number")
+            order_date = QLabel(order['order_date'].strftime("%Y-%m-%d %H:%M"))
+            order_date.setObjectName("order-date")
+            order_header.addWidget(order_num)
+            order_header.addStretch()
+            order_header.addWidget(order_date)
+            
+            # Restaurant name
+            restaurant_label = QLabel(f"Restaurant: {order['restaurant_name']}")
+            restaurant_label.setObjectName("order-restaurant")
+            
+            # Status
+            status_label = QLabel(f"Status: {order['delivery_status']}")
+            status_label.setObjectName("order-status")
+            
+            # Total amount
+            total_label = QLabel(f"Total: ${order['total_amount']:.2f}")
+            total_label.setObjectName("order-total")
+            
+            # View details button
+            details_btn = QPushButton("View Details")
+            details_btn.setObjectName("view-details-btn")
+            details_btn.clicked.connect(lambda checked, oid=order['order_id']: self.view_order_details(oid))
+            
+            card_layout.addLayout(order_header)
+            card_layout.addWidget(restaurant_label)
+            card_layout.addWidget(status_label)
+            card_layout.addWidget(total_label)
+            card_layout.addWidget(details_btn)
+            
+            self.restaurants_grid.addWidget(card, row, col)
+            col += 1
+            if col > 2:  # 3 columns
+                col = 0
+                row += 1
 
 # ... rest of file unchanged ... 
