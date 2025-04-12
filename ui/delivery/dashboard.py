@@ -371,26 +371,18 @@ class DeliveryDashboard(QWidget):
             
             # Add each order to the layout
             for order in orders:
-                order_id = order['order_id']
-                order_date = order['order_date']
-                restaurant_name = order['restaurant_name']
-                restaurant_address = order['restaurant_address']
-                customer_name = order['customer_name']
-                customer_address = order['customer_address']
-                customer_phone = order['customer_phone']
-                total_amount = order['total_amount']
-                
-                # Format the date for better readability
-                try:
-                    date_obj = datetime.strptime(str(order_date), "%Y-%m-%d %H:%M:%S")
-                except (ValueError, TypeError):
-                    date_obj = datetime.now()
-                
                 order_card = self.create_new_order_card(
-                    order_id, date_obj, restaurant_name, restaurant_address,
-                    customer_name, customer_address, customer_phone, total_amount
+                    order['order_id'],
+                    order['order_date'],
+                    order['restaurant_name'],
+                    order['restaurant_address'],
+                    order['customer_name'],
+                    order['customer_address'],
+                    order['customer_phone'],
+                    order['total_amount']
                 )
-                self.new_orders_layout.addWidget(order_card)
+                if order_card:  # Only add if card was created successfully
+                    self.new_orders_layout.addWidget(order_card)
             
         except Exception as e:
             self.display_no_orders_message(self.new_orders_container, f"Error loading orders: {str(e)}")
@@ -459,7 +451,7 @@ class DeliveryDashboard(QWidget):
     def load_earnings(self):
         """Load earnings for delivery person"""
         if not self.delivery_person_id:
-            self.total_earnings_value.setText("$0.00")
+            self.total_earnings_value.setText("0 AED")
             self.total_deliveries_value.setText("0")
             self.avg_rating_value.setText("N/A")
             return
@@ -473,17 +465,17 @@ class DeliveryDashboard(QWidget):
             """, (self.delivery_person_id,))
             
             if not earnings or earnings[0]['delivery_count'] == 0:
-                self.total_earnings_value.setText("$0.00")
+                self.total_earnings_value.setText("0 AED")
                 self.total_deliveries_value.setText("0")
                 self.avg_rating_value.setText("N/A")
                 return
             
-            # Calculate earnings (10% of total order value)
+            # Calculate earnings (10% of total order value in AED)
             delivery_count = earnings[0]['delivery_count']
-            total_earnings = earnings[0]['total_earnings'] * 0.10 if earnings[0]['total_earnings'] else 0
+            total_earnings = float(earnings[0]['total_earnings'] or 0) * 0.10 * 3.67  # Convert to AED
             
             # Set values
-            self.total_earnings_value.setText(f"${total_earnings:.2f}")
+            self.total_earnings_value.setText(f"{total_earnings:.2f} AED")
             self.total_deliveries_value.setText(str(delivery_count))
             
             # Get average rating if available
@@ -579,9 +571,9 @@ class DeliveryDashboard(QWidget):
                 
                 # Format the amount with currency symbol
                 try:
-                    formatted_amount = f"${float(total_amount):.2f}"
+                    formatted_amount = f"{float(total_amount) * 3.67:.2f} AED"
                 except (ValueError, TypeError):
-                    formatted_amount = f"${0:.2f}"
+                    formatted_amount = f"0 AED"
                 
                 table.setItem(row, 0, QTableWidgetItem(str(order_id)))
                 table.setItem(row, 1, QTableWidgetItem(formatted_date))
@@ -825,7 +817,7 @@ class DeliveryDashboard(QWidget):
         # Total earnings
         total_label = QLabel("Total Earnings:")
         total_label.setObjectName("total-earnings-label")
-        self.total_earnings_value = QLabel("$0.00")
+        self.total_earnings_value = QLabel("0 AED")
         self.total_earnings_value.setObjectName("total-earnings-value")
         
         summary_layout.addWidget(total_label, 0, 0)
@@ -985,151 +977,165 @@ class DeliveryDashboard(QWidget):
     
     def create_new_order_card(self, order_id, order_date, restaurant_name, restaurant_address, customer_name, customer_address, customer_phone, total_amount):
         """Create a card for a new order"""
-        # Format the date
-        formatted_date = order_date.strftime("%Y-%m-%d %H:%M")
-        
-        # Create the card widget
-        card = QWidget()
-        card.setObjectName("order-card")
-        card.setStyleSheet("""
-            #order-card {
-                background-color: white;
-                border-radius: 8px;
-                padding: 15px;
-                margin-bottom: 10px;
-            }
-        """)
-        
-        card_layout = QVBoxLayout(card)
-        
-        # Order header
-        header_layout = QHBoxLayout()
-        order_label = QLabel(f"Order #{order_id}")
-        order_label.setStyleSheet("font-weight: bold; font-size: 16px;")
-        date_label = QLabel(formatted_date)
-        date_label.setStyleSheet("color: #666;")
-        date_label.setAlignment(Qt.AlignmentFlag.AlignRight)
-        
-        header_layout.addWidget(order_label)
-        header_layout.addWidget(date_label)
-        card_layout.addLayout(header_layout)
-        
-        # Restaurant & Customer info
-        info_layout = QGridLayout()
-        info_layout.addWidget(QLabel("Restaurant:"), 0, 0)
-        info_layout.addWidget(QLabel(restaurant_name), 0, 1)
-        info_layout.addWidget(QLabel("Customer:"), 1, 0)
-        info_layout.addWidget(QLabel(customer_name), 1, 1)
-        
-        # Delivery address
-        info_layout.addWidget(QLabel("Delivery Address:"), 2, 0)
-        address = f"{restaurant_address}, {customer_address}"
-        info_layout.addWidget(QLabel(address), 2, 1)
-        
-        # Amount
-        info_layout.addWidget(QLabel("Amount:"), 3, 0)
-        info_layout.addWidget(QLabel(f"${total_amount:.2f}"), 3, 1)
-        
-        card_layout.addLayout(info_layout)
-        
-        # Accept button
-        accept_btn = QPushButton("Accept Delivery")
-        accept_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #4CAF50;
-                color: white;
-                border: none;
-                padding: 8px 16px;
-                border-radius: 4px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #45a049;
-            }
-        """)
-        accept_btn.clicked.connect(lambda: self.accept_delivery(order_id))
-        
-        button_layout = QHBoxLayout()
-        button_layout.addStretch()
-        button_layout.addWidget(accept_btn)
-        card_layout.addLayout(button_layout)
-        
-        # Add the card to the layout
-        self.new_orders_layout.addWidget(card)
+        try:
+            # Format the date
+            if isinstance(order_date, datetime):
+                formatted_date = order_date.strftime("%Y-%m-%d %H:%M")
+            else:
+                formatted_date = str(order_date)
+            
+            # Create the card widget
+            card = QWidget()
+            card.setObjectName("order-card")
+            card.setStyleSheet("""
+                #order-card {
+                    background-color: white;
+                    border-radius: 8px;
+                    padding: 15px;
+                    margin-bottom: 10px;
+                    border: 1px solid #ddd;
+                }
+            """)
+            
+            card_layout = QVBoxLayout(card)
+            
+            # Order header
+            header_layout = QHBoxLayout()
+            order_label = QLabel(f"Order #{order_id}")
+            order_label.setStyleSheet("font-weight: bold; font-size: 16px;")
+            date_label = QLabel(formatted_date)
+            date_label.setStyleSheet("color: #666;")
+            date_label.setAlignment(Qt.AlignmentFlag.AlignRight)
+            
+            header_layout.addWidget(order_label)
+            header_layout.addWidget(date_label)
+            card_layout.addLayout(header_layout)
+            
+            # Restaurant & Customer info
+            info_layout = QGridLayout()
+            info_layout.addWidget(QLabel("Restaurant:"), 0, 0)
+            info_layout.addWidget(QLabel(restaurant_name), 0, 1)
+            info_layout.addWidget(QLabel("Customer:"), 1, 0)
+            info_layout.addWidget(QLabel(customer_name), 1, 1)
+            
+            # Delivery address
+            info_layout.addWidget(QLabel("Delivery Address:"), 2, 0)
+            address = f"{restaurant_address} → {customer_address}"
+            info_layout.addWidget(QLabel(address), 2, 1)
+            
+            # Amount
+            info_layout.addWidget(QLabel("Amount:"), 3, 0)
+            info_layout.addWidget(QLabel(f"{float(total_amount) * 3.67:.2f} AED"), 3, 1)
+            
+            card_layout.addLayout(info_layout)
+            
+            # Accept button
+            accept_btn = QPushButton("Accept Delivery")
+            accept_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #4CAF50;
+                    color: white;
+                    border: none;
+                    padding: 8px 16px;
+                    border-radius: 4px;
+                    font-weight: bold;
+                }
+                QPushButton:hover {
+                    background-color: #45a049;
+                }
+            """)
+            accept_btn.clicked.connect(lambda: self.accept_delivery(order_id))
+            
+            button_layout = QHBoxLayout()
+            button_layout.addStretch()
+            button_layout.addWidget(accept_btn)
+            card_layout.addLayout(button_layout)
+            
+            return card
+        except Exception as e:
+            print(f"Error creating order card: {e}")
+            return None
     
     def create_active_delivery_card(self, order_id, order_date, restaurant_name, restaurant_address, customer_name, customer_address, customer_phone, total_amount):
         """Create a card for an active delivery"""
-        # Format the date
-        formatted_date = order_date.strftime("%Y-%m-%d %H:%M")
-        
-        # Create the card widget
-        card = QWidget()
-        card.setObjectName("delivery-card")
-        card.setStyleSheet("""
-            #delivery-card {
-                background-color: white;
-                border-radius: 8px;
-                padding: 15px;
-                margin-bottom: 10px;
-            }
-        """)
-        
-        card_layout = QVBoxLayout(card)
-        
-        # Order header
-        header_layout = QHBoxLayout()
-        order_label = QLabel(f"Order #{order_id}")
-        order_label.setStyleSheet("font-weight: bold; font-size: 16px;")
-        date_label = QLabel(formatted_date)
-        date_label.setStyleSheet("color: #666;")
-        date_label.setAlignment(Qt.AlignmentFlag.AlignRight)
-        
-        header_layout.addWidget(order_label)
-        header_layout.addWidget(date_label)
-        card_layout.addLayout(header_layout)
-        
-        # Restaurant & Customer info
-        info_layout = QGridLayout()
-        info_layout.addWidget(QLabel("Restaurant:"), 0, 0)
-        info_layout.addWidget(QLabel(restaurant_name), 0, 1)
-        info_layout.addWidget(QLabel("Customer:"), 1, 0)
-        info_layout.addWidget(QLabel(customer_name), 1, 1)
-        
-        # Delivery address
-        info_layout.addWidget(QLabel("Delivery Address:"), 2, 0)
-        address = f"{restaurant_address}, {customer_address}"
-        info_layout.addWidget(QLabel(address), 2, 1)
-        
-        # Amount
-        info_layout.addWidget(QLabel("Amount:"), 3, 0)
-        info_layout.addWidget(QLabel(f"${total_amount:.2f}"), 3, 1)
-        
-        card_layout.addLayout(info_layout)
-        
-        # Complete button
-        complete_btn = QPushButton("Complete Delivery")
-        complete_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #4CAF50;
-                color: white;
-                border: none;
-                padding: 8px 16px;
-                border-radius: 4px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #45a049;
-            }
-        """)
-        complete_btn.clicked.connect(lambda: self.complete_delivery(order_id))
-        
-        button_layout = QHBoxLayout()
-        button_layout.addStretch()
-        button_layout.addWidget(complete_btn)
-        card_layout.addLayout(button_layout)
-        
-        # Add the card to the layout
-        self.active_deliveries_layout.addWidget(card)
+        try:
+            # Format the date
+            if isinstance(order_date, datetime):
+                formatted_date = order_date.strftime("%Y-%m-%d %H:%M")
+            else:
+                formatted_date = str(order_date)
+            
+            # Create the card widget
+            card = QWidget()
+            card.setObjectName("delivery-card")
+            card.setStyleSheet("""
+                #delivery-card {
+                    background-color: white;
+                    border-radius: 8px;
+                    padding: 15px;
+                    margin-bottom: 10px;
+                    border: 1px solid #ddd;
+                }
+            """)
+            
+            card_layout = QVBoxLayout(card)
+            
+            # Order header
+            header_layout = QHBoxLayout()
+            order_label = QLabel(f"Order #{order_id}")
+            order_label.setStyleSheet("font-weight: bold; font-size: 16px;")
+            date_label = QLabel(formatted_date)
+            date_label.setStyleSheet("color: #666;")
+            date_label.setAlignment(Qt.AlignmentFlag.AlignRight)
+            
+            header_layout.addWidget(order_label)
+            header_layout.addWidget(date_label)
+            card_layout.addLayout(header_layout)
+            
+            # Restaurant & Customer info
+            info_layout = QGridLayout()
+            info_layout.addWidget(QLabel("Restaurant:"), 0, 0)
+            info_layout.addWidget(QLabel(restaurant_name), 0, 1)
+            info_layout.addWidget(QLabel("Customer:"), 1, 0)
+            info_layout.addWidget(QLabel(customer_name), 1, 1)
+            
+            # Delivery address
+            info_layout.addWidget(QLabel("Delivery Address:"), 2, 0)
+            address = f"{restaurant_address} → {customer_address}"
+            info_layout.addWidget(QLabel(address), 2, 1)
+            
+            # Amount
+            info_layout.addWidget(QLabel("Amount:"), 3, 0)
+            info_layout.addWidget(QLabel(f"{float(total_amount) * 3.67:.2f} AED"), 3, 1)
+            
+            card_layout.addLayout(info_layout)
+            
+            # Complete button
+            complete_btn = QPushButton("Complete Delivery")
+            complete_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #4CAF50;
+                    color: white;
+                    border: none;
+                    padding: 8px 16px;
+                    border-radius: 4px;
+                    font-weight: bold;
+                }
+                QPushButton:hover {
+                    background-color: #45a049;
+                }
+            """)
+            complete_btn.clicked.connect(lambda: self.complete_delivery(order_id))
+            
+            button_layout = QHBoxLayout()
+            button_layout.addStretch()
+            button_layout.addWidget(complete_btn)
+            card_layout.addLayout(button_layout)
+            
+            return card
+        except Exception as e:
+            print(f"Error creating delivery card: {e}")
+            return None
     
     def accept_delivery(self, order_id):
         """Accept a delivery order"""

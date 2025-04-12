@@ -406,7 +406,7 @@ class CustomerDashboard(QWidget):
         summary_frame = QFrame()
         summary_layout = QVBoxLayout(summary_frame)
         
-        self.cart_total_label = QLabel("Total: $0.00")
+        self.cart_total_label = QLabel("Total: 0.00 AED")
         self.cart_total_label.setFont(QFont("Arial", 16, QFont.Weight.Bold))
         self.cart_total_label.setAlignment(Qt.AlignmentFlag.AlignRight)
         
@@ -493,10 +493,30 @@ class CustomerDashboard(QWidget):
     
     def handle_add_to_cart(self, menu_item, quantity):
         # Check if item already in cart
+        total_quantity = quantity
+        for item in self.cart_items:
+            if item['menu_item']['menu_id'] == menu_item['menu_id']:
+                total_quantity += item['quantity']
+        
+        # Check if total quantity exceeds stock
+        if total_quantity > menu_item['stock_quantity']:
+            QMessageBox.warning(
+                self,
+                "Insufficient Stock",
+                f"Sorry, only {menu_item['stock_quantity']} {menu_item['dish_name']} available. You already have {total_quantity - quantity} in your cart."
+            )
+            return
+        
+        # Add new item to cart or update existing
         for item in self.cart_items:
             if item['menu_item']['menu_id'] == menu_item['menu_id']:
                 item['quantity'] += quantity
                 self.update_cart_display()
+                QMessageBox.information(
+                    self,
+                    "Added to Cart",
+                    f"{quantity} x {menu_item['dish_name']} added to your cart"
+                )
                 return
         
         # Add new item to cart
@@ -506,6 +526,11 @@ class CustomerDashboard(QWidget):
         })
         
         self.update_cart_display()
+        QMessageBox.information(
+            self,
+            "Added to Cart",
+            f"{quantity} x {menu_item['dish_name']} added to your cart"
+        )
     
     def update_cart_display(self):
         # Clear existing items
@@ -532,7 +557,7 @@ class CustomerDashboard(QWidget):
             self.cart_table.setItem(i, 0, name_item)
             
             # Price
-            price_item = QTableWidgetItem(f"${unit_price:.2f}")
+            price_item = QTableWidgetItem(f"{unit_price:.2f} AED")
             self.cart_table.setItem(i, 1, price_item)
             
             # Quantity
@@ -540,7 +565,7 @@ class CustomerDashboard(QWidget):
             self.cart_table.setItem(i, 2, quantity_item)
             
             # Total
-            total_item = QTableWidgetItem(f"${item_total:.2f}")
+            total_item = QTableWidgetItem(f"{item_total:.2f} AED")
             self.cart_table.setItem(i, 3, total_item)
             
             # Remove button
@@ -550,7 +575,7 @@ class CustomerDashboard(QWidget):
             self.cart_table.setCellWidget(i, 4, remove_btn)
         
         # Update total label
-        self.cart_total_label.setText(f"Total: ${total:.2f}")
+        self.cart_total_label.setText(f"Total: {total:.2f} AED")
     
     def remove_from_cart(self, index):
         if 0 <= index < len(self.cart_items):
@@ -626,7 +651,7 @@ class CustomerDashboard(QWidget):
             
             item_layout = QHBoxLayout()
             item_name = QLabel(f"{quantity} x {menu_item['dish_name']}")
-            item_price = QLabel(f"${item_total:.2f}")
+            item_price = QLabel(f"{item_total:.2f} AED")
             item_price.setAlignment(Qt.AlignmentFlag.AlignRight)
             
             item_layout.addWidget(item_name)
@@ -638,7 +663,7 @@ class CustomerDashboard(QWidget):
         total_layout = QHBoxLayout()
         total_label = QLabel("Total:")
         total_label.setFont(QFont("Arial", 14, QFont.Weight.Bold))
-        total_amount = QLabel(f"${total:.2f}")
+        total_amount = QLabel(f"{total:.2f} AED")
         total_amount.setFont(QFont("Arial", 14, QFont.Weight.Bold))
         total_amount.setAlignment(Qt.AlignmentFlag.AlignRight)
         
@@ -918,7 +943,7 @@ class CustomerDashboard(QWidget):
         # Payment method and total
         payment_layout = QHBoxLayout()
         payment_method = QLabel(f"Payment: {order['payment_method']}")
-        total_amount = QLabel(f"Total: ${float(order['total_amount']):.2f}")
+        total_amount = QLabel(f"Total: {float(order['total_amount']):.2f} AED")
         total_amount.setFont(QFont("Arial", 12, QFont.Weight.Bold))
         
         payment_layout.addWidget(payment_method)
@@ -1000,10 +1025,10 @@ class CustomerDashboard(QWidget):
         
         for i, item in enumerate(items):
             name_item = QTableWidgetItem(item['dish_name'])
-            price_item = QTableWidgetItem(f"${float(item['unit_price']):.2f}")
+            price_item = QTableWidgetItem(f"{float(item['unit_price']):.2f} AED")
             quantity_item = QTableWidgetItem(str(item['quantity']))
             item_total = float(item['unit_price']) * item['quantity']
-            total_item = QTableWidgetItem(f"${item_total:.2f}")
+            total_item = QTableWidgetItem(f"{item_total:.2f} AED")
             
             items_table.setItem(i, 0, name_item)
             items_table.setItem(i, 1, price_item)
@@ -1016,7 +1041,7 @@ class CustomerDashboard(QWidget):
         total_layout = QHBoxLayout()
         total_label = QLabel("Total Amount:")
         total_label.setFont(QFont("Arial", 14, QFont.Weight.Bold))
-        total_amount = QLabel(f"${float(order['total_amount']):.2f}")
+        total_amount = QLabel(f"{float(order['total_amount']):.2f} AED")
         total_amount.setFont(QFont("Arial", 14, QFont.Weight.Bold))
         total_amount.setAlignment(Qt.AlignmentFlag.AlignRight)
         

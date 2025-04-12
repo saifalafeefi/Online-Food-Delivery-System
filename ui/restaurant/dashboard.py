@@ -25,14 +25,16 @@ class RestaurantDashboard(QWidget):
             "Cancelled": None
         }
         self.initUI()
-        # Reload restaurant profile after UI initialization
+        # Load restaurant profile after UI initialization
         self.load_restaurant_profile()
         if self.restaurant_data:
             self.load_profile_data()
             # Load dashboard stats if restaurant exists
             self.load_dashboard_stats()
+            # Start with dashboard
+            self.show_dashboard()
         else:
-            # If no profile exists, create a basic one
+            # Only show profile setup if no restaurant exists
             self.show_profile_setup()
     
     def load_restaurant_profile(self):
@@ -194,13 +196,6 @@ class RestaurantDashboard(QWidget):
                 background-color: #c0392b;
             }
         """)
-        
-        # Check if restaurant profile exists
-        if not self.restaurant_data:
-            self.show_profile_setup()
-        else:
-            # Start with dashboard
-            self.show_dashboard()
     
     def create_dashboard_page(self):
         page = QWidget()
@@ -220,7 +215,7 @@ class RestaurantDashboard(QWidget):
             "today_orders": {"title": "Today's Orders", "value": "0", "icon": "📦", "widget": None},
             "pending_orders": {"title": "Pending Orders", "value": "0", "icon": "⏳", "widget": None},
             "menu_items": {"title": "Menu Items", "value": "0", "icon": "🍽️", "widget": None},
-            "total_sales": {"title": "Total Sales", "value": "$0", "icon": "💰", "widget": None}
+            "total_sales": {"title": "Total Sales", "value": "0 AED", "icon": "��", "widget": None}
         }
         
         for key, card in self.stat_cards.items():
@@ -499,7 +494,7 @@ class RestaurantDashboard(QWidget):
             item_layout = QHBoxLayout()
             
             item_name = QLabel(f"{item['quantity']} x {item['dish_name']}")
-            item_price = QLabel(f"${item_total:.2f}")
+            item_price = QLabel(f"{item_total:.2f} AED")
             item_price.setAlignment(Qt.AlignmentFlag.AlignRight)
             
             item_layout.addWidget(item_name)
@@ -511,7 +506,7 @@ class RestaurantDashboard(QWidget):
         total_layout = QHBoxLayout()
         total_label = QLabel("Total:")
         total_label.setFont(QFont("Arial", 12, QFont.Weight.Bold))
-        total_amount = QLabel(f"${total:.2f}")
+        total_amount = QLabel(f"{total:.2f} AED")
         total_amount.setFont(QFont("Arial", 12, QFont.Weight.Bold))
         total_amount.setAlignment(Qt.AlignmentFlag.AlignRight)
         
@@ -686,7 +681,7 @@ class RestaurantDashboard(QWidget):
         self.profile_min_order.setMinimum(0)
         self.profile_min_order.setMaximum(1000)
         self.profile_min_order.setSingleStep(10)
-        self.profile_min_order.setPrefix("$")
+        self.profile_min_order.setPrefix("AED ")
         
         advanced_layout.addRow("Opening Time:", self.profile_opening)
         advanced_layout.addRow("Closing Time:", self.profile_closing)
@@ -872,13 +867,13 @@ class RestaurantDashboard(QWidget):
             self.menu_table.setItem(row, 2, QTableWidgetItem(item['category']))
             
             # Format price
-            price = f"${item['price']:.2f}"
+            price = f"{item['price']:.2f} AED"
             self.menu_table.setItem(row, 3, QTableWidgetItem(price))
             
             # Format discount price if exists
             discount = "-"
             if item['discount_price'] and float(item['discount_price']) > 0:
-                discount = f"${item['discount_price']:.2f}"
+                discount = f"{item['discount_price']:.2f} AED"
             self.menu_table.setItem(row, 4, QTableWidgetItem(discount))
             
             # Stock and availability
@@ -945,13 +940,13 @@ class RestaurantDashboard(QWidget):
                 self.menu_table.setItem(row, 2, QTableWidgetItem(item['category']))
                 
                 # Format price
-                price = f"${item['price']:.2f}"
+                price = f"{item['price']:.2f} AED"
                 self.menu_table.setItem(row, 3, QTableWidgetItem(price))
                 
                 # Format discount price if exists
                 discount = "-"
                 if item['discount_price'] and float(item['discount_price']) > 0:
-                    discount = f"${item['discount_price']:.2f}"
+                    discount = f"{item['discount_price']:.2f} AED"
                 self.menu_table.setItem(row, 4, QTableWidgetItem(discount))
                 
                 # Stock and availability
@@ -1099,7 +1094,7 @@ class RestaurantDashboard(QWidget):
             """, (self.restaurant_id,))
             
             sales_amount = total_sales[0]['total'] if total_sales and total_sales[0]['total'] else 0
-            self.stat_cards["total_sales"]["widget"].setText(f"${float(sales_amount):.2f}")
+            self.stat_cards["total_sales"]["widget"].setText(f"{float(sales_amount):.2f} AED")
             
             # Recent orders (last 5)
             self.recent_orders_table.setRowCount(0)
@@ -1143,7 +1138,7 @@ class RestaurantDashboard(QWidget):
                 items = QTableWidgetItem(items_text)
                 
                 # Amount
-                amount = QTableWidgetItem(f"${float(order['total_amount']):.2f}")
+                amount = QTableWidgetItem(f"{float(order['total_amount']):.2f} AED")
                 
                 # Status with color
                 status = QTableWidgetItem(order['delivery_status'])
@@ -1165,6 +1160,50 @@ class RestaurantDashboard(QWidget):
         except Exception as e:
             print(f"Error loading dashboard stats: {e}")
             QMessageBox.critical(self, "Error", f"Failed to load dashboard statistics: {str(e)}")
+
+    def cancel_order(self, order_id):
+        """Cancel an order and restore stock"""
+        try:
+            # Get order items first
+            items = execute_query("""
+                SELECT menu_id, quantity 
+                FROM order_items 
+                WHERE order_id = %s
+            """, (order_id,))
+            
+            # Restore stock for each item
+            for item in items:
+                execute_query("""
+                    UPDATE menus 
+                    SET stock_quantity = stock_quantity + %s,
+                        availability = CASE 
+                            WHEN stock_quantity + %s > 0 THEN 'In Stock' 
+                            ELSE availability 
+                        END
+                    WHERE menu_id = %s
+                """, (item['quantity'], item['quantity'], item['menu_id']), fetch=False)
+            
+            # Update order status
+            execute_query("""
+                UPDATE orders 
+                SET order_status = 'Cancelled' 
+                WHERE order_id = %s
+            """, (order_id,), fetch=False)
+            
+            # Refresh orders
+            self.load_all_orders()
+            
+            QMessageBox.information(
+                self,
+                "Order Cancelled",
+                "Order has been cancelled and stock quantities have been restored."
+            )
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "Error",
+                f"Failed to cancel order: {str(e)}"
+            )
 
 
 class MenuItemDialog(QDialog):
@@ -1210,7 +1249,7 @@ class MenuItemDialog(QDialog):
         self.price_input.setMinimum(0)
         self.price_input.setMaximum(1000)
         self.price_input.setSingleStep(0.50)
-        self.price_input.setPrefix("$")
+        self.price_input.setPrefix("AED ")
         if self.menu_item:
             self.price_input.setValue(float(self.menu_item['price']))
         
@@ -1219,7 +1258,7 @@ class MenuItemDialog(QDialog):
         self.discount_input.setMinimum(0)
         self.discount_input.setMaximum(1000)
         self.discount_input.setSingleStep(0.50)
-        self.discount_input.setPrefix("$")
+        self.discount_input.setPrefix("AED ")
         if self.menu_item and self.menu_item['discount_price']:
             self.discount_input.setValue(float(self.menu_item['discount_price']))
         
@@ -1272,7 +1311,9 @@ class MenuItemDialog(QDialog):
         price = self.price_input.value()
         discount_price = self.discount_input.value() if self.discount_input.value() > 0 else None
         stock = self.stock_input.value()
-        availability = self.availability_input.currentText()
+        
+        # Automatically set availability based on stock
+        availability = "In Stock" if stock > 0 else "Out of Stock"
         
         if not name:
             QMessageBox.warning(self, "Validation Error", "Please enter a dish name")

@@ -26,9 +26,9 @@ class RestaurantView(QWidget):
         if result:
             self.restaurant_data = result[0]
         
-        # Load menu items
+        # Load ALL menu items, regardless of stock status
         self.menu_items = execute_query(
-            "SELECT * FROM menus WHERE restaurant_id = %s AND availability = 'In Stock'",
+            "SELECT * FROM menus WHERE restaurant_id = %s ORDER BY category, dish_name",
             (self.restaurant_id,)
         ) or []
     
@@ -42,8 +42,8 @@ class RestaurantView(QWidget):
         
         self.setWindowTitle(f"Food Delivery - {self.restaurant_data['name']}")
         
-        # Main layout
         main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(20, 20, 20, 20)
         
         # Header section
         header_frame = QFrame()
@@ -60,52 +60,59 @@ class RestaurantView(QWidget):
         name_label.setObjectName("restaurant-name")
         name_label.setFont(QFont("Arial", 24, QFont.Weight.Bold))
         
-        info_layout = QHBoxLayout()
+        info_label = QLabel(f"{self.restaurant_data['cuisine_type']} • {self.restaurant_data['address']}")
+        info_label.setObjectName("restaurant-info")
         
-        cuisine_label = QLabel(f"Cuisine: {self.restaurant_data['cuisine_type']}")
-        cuisine_label.setObjectName("restaurant-info")
+        # Rating
+        rating = execute_query("""
+            SELECT AVG(food_rating) as avg_rating, COUNT(*) as total_ratings
+            FROM ratings
+            WHERE restaurant_id = %s
+        """, (self.restaurant_id,))
         
-        rating_label = QLabel(f"Rating: {self.restaurant_data['rating']:.1f}★")
+        rating_text = "No ratings yet"
+        if rating and rating[0]['avg_rating']:
+            rating_text = f"★ {rating[0]['avg_rating']:.1f} ({rating[0]['total_ratings']} ratings)"
+        
+        rating_label = QLabel(rating_text)
         rating_label.setObjectName("restaurant-rating")
         
-        info_layout.addWidget(cuisine_label)
-        info_layout.addWidget(rating_label)
-        info_layout.addStretch()
-        
-        # Add to header
         header_layout.addWidget(back_btn)
         header_layout.addWidget(name_label)
-        header_layout.addLayout(info_layout)
+        header_layout.addWidget(info_label)
+        header_layout.addWidget(rating_label)
         
         # Menu section
         menu_label = QLabel("Menu")
         menu_label.setObjectName("section-header")
-        menu_label.setFont(QFont("Arial", 18, QFont.Weight.Bold))
+        menu_label.setFont(QFont("Arial", 20, QFont.Weight.Bold))
         
-        # Categories and menu items
+        # Scroll area for menu items
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(True)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        
         scroll_content = QWidget()
         scroll_layout = QVBoxLayout(scroll_content)
+        scroll_layout.setContentsMargins(0, 0, 0, 0)
         
         # Group menu items by category
         categories = {}
         for item in self.menu_items:
-            category = item['category']
-            if category not in categories:
-                categories[category] = []
-            categories[category].append(item)
+            if item['category'] not in categories:
+                categories[item['category']] = []
+            categories[item['category']].append(item)
         
-        # Create category sections
+        # Add menu items by category
         for category, items in categories.items():
             category_frame = QFrame()
             category_frame.setObjectName("category-frame")
             category_layout = QVBoxLayout(category_frame)
             
+            # Category label
             category_label = QLabel(category)
             category_label.setObjectName("category-label")
             category_label.setFont(QFont("Arial", 16, QFont.Weight.Bold))
-            
             category_layout.addWidget(category_label)
             
             # Add menu items for this category
@@ -125,16 +132,22 @@ class RestaurantView(QWidget):
                 description.setObjectName("item-description")
                 description.setWordWrap(True)
                 
-                price_text = f"${item['price']:.2f}"
+                price_text = f"{item['price']:.2f} AED"
                 if item['discount_price']:
-                    price_text = f"<s>${item['price']:.2f}</s> ${item['discount_price']:.2f}"
+                    price_text = f"<s>{item['price']:.2f} AED</s> {item['discount_price']:.2f} AED"
                 
                 price = QLabel(price_text)
                 price.setObjectName("item-price")
                 
+                # Stock status
+                stock_status = QLabel(f"Available: {item['stock_quantity']}")
+                stock_status.setObjectName("stock-status")
+                stock_status.setStyleSheet("color: #27ae60;" if item['stock_quantity'] > 0 else "color: #e74c3c;")
+                
                 details_layout.addWidget(name)
                 details_layout.addWidget(description)
                 details_layout.addWidget(price)
+                details_layout.addWidget(stock_status)
                 
                 # Add to cart controls
                 add_layout = QVBoxLayout()
@@ -142,12 +155,25 @@ class RestaurantView(QWidget):
                 quantity = QSpinBox()
                 quantity.setObjectName("quantity-input")
                 quantity.setMinimum(1)
-                quantity.setMaximum(10)
+                quantity.setMaximum(item['stock_quantity'] if item['stock_quantity'] > 0 else 0)
                 quantity.setValue(1)
                 
                 add_btn = QPushButton("Add to Cart")
                 add_btn.setObjectName("add-to-cart-button")
                 add_btn.clicked.connect(lambda _, item=item, qty=quantity: self.handle_add_to_cart(item, qty))
+                
+                # Disable button and set grey style if out of stock
+                if item['stock_quantity'] <= 0:
+                    add_btn.setEnabled(False)
+                    add_btn.setStyleSheet("""
+                        QPushButton {
+                            background-color: #95a5a6;
+                            color: white;
+                            border-radius: 4px;
+                            padding: 8px;
+                            font-weight: bold;
+                        }
+                    """)
                 
                 add_layout.addWidget(quantity)
                 add_layout.addWidget(add_btn)
@@ -243,6 +269,10 @@ class RestaurantView(QWidget):
                 font-weight: bold;
                 font-size: 14px;
             }
+            #stock-status {
+                font-size: 12px;
+                font-weight: bold;
+            }
             #quantity-input {
                 width: 50px;
                 padding: 5px;
@@ -261,11 +291,24 @@ class RestaurantView(QWidget):
     
     def handle_add_to_cart(self, menu_item, quantity_spinbox):
         quantity = quantity_spinbox.value()
-        self.add_to_cart.emit(menu_item, quantity)
         
-        # Show confirmation
-        QMessageBox.information(
-            self,
-            "Added to Cart",
-            f"{quantity} x {menu_item['dish_name']} added to your cart"
-        ) 
+        # Check if item is in stock
+        if menu_item['stock_quantity'] <= 0:
+            QMessageBox.warning(
+                self,
+                "Out of Stock",
+                f"Sorry, {menu_item['dish_name']} is currently out of stock."
+            )
+            return
+        
+        # Check if requested quantity exceeds available stock
+        if quantity > menu_item['stock_quantity']:
+            QMessageBox.warning(
+                self,
+                "Insufficient Stock",
+                f"Sorry, only {menu_item['stock_quantity']} {menu_item['dish_name']} available."
+            )
+            return
+        
+        # Only emit the signal if we pass all checks
+        self.add_to_cart.emit(menu_item, quantity) 
