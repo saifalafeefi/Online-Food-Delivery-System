@@ -1065,6 +1065,52 @@ class AdminDashboard(QWidget):
             dialog = QDialog(self)
             dialog.setWindowTitle(f"Order #{order_id} Details")
             dialog.setMinimumWidth(600)
+            dialog.setStyleSheet("""
+                QDialog {
+                    background-color: #2c3e50;
+                    color: white;
+                }
+                QLabel {
+                    color: white;
+                    font-size: 12px;
+                }
+                QGroupBox {
+                    color: white;
+                    border: 1px solid #7f8c8d;
+                    border-radius: 4px;
+                    margin-top: 10px;
+                    padding-top: 10px;
+                }
+                QGroupBox::title {
+                    subcontrol-origin: margin;
+                    left: 10px;
+                    padding: 0 3px;
+                }
+                QTableWidget {
+                    background-color: #34495e;
+                    color: white;
+                    gridline-color: #7f8c8d;
+                    alternate-background-color: #2c3e50;
+                }
+                QHeaderView::section {
+                    background-color: #2c3e50;
+                    color: white;
+                    padding: 5px;
+                    border: none;
+                    font-weight: bold;
+                }
+                QPushButton {
+                    background-color: #3498db;
+                    color: white;
+                    border: none;
+                    border-radius: 4px;
+                    padding: 8px 15px;
+                    font-weight: bold;
+                }
+                QPushButton:hover {
+                    background-color: #2980b9;
+                }
+            """)
             
             layout = QVBoxLayout(dialog)
             
@@ -1077,13 +1123,13 @@ class AdminDashboard(QWidget):
             status_label = QLabel("Status:")
             status_value = QLabel(order['delivery_status'])
             
-            status_color = "black"
+            status_color = "white"
             if order['delivery_status'] == 'Delivered':
-                status_color = "darkgreen"
+                status_color = "#2ecc71"
             elif order['delivery_status'] == 'Cancelled':
-                status_color = "red"
+                status_color = "#e74c3c"
             elif order['delivery_status'] in ['Preparing', 'Ready for Pickup', 'Out for Delivery']:
-                status_color = "darkblue"
+                status_color = "#3498db"
                 
             status_value.setStyleSheet(f"color: {status_color}; font-weight: bold;")
             status_layout.addWidget(status_label)
@@ -1140,6 +1186,10 @@ class AdminDashboard(QWidget):
                     quantity_item = QTableWidgetItem(str(item['quantity']))
                     total_item = QTableWidgetItem(f"AED {float(item['total_price']):.2f}")
                     
+                    # Set text color to white for all items
+                    for item in [name_item, price_item, quantity_item, total_item]:
+                        item.setForeground(Qt.GlobalColor.white)
+                    
                     items_table.setItem(i, 0, name_item)
                     items_table.setItem(i, 1, price_item)
                     items_table.setItem(i, 2, quantity_item)
@@ -1148,6 +1198,7 @@ class AdminDashboard(QWidget):
                 items_table.setRowCount(1)
                 no_items = QTableWidgetItem("No items found for this order")
                 no_items.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                no_items.setForeground(Qt.GlobalColor.white)
                 items_table.setSpan(0, 0, 1, 4)
                 items_table.setItem(0, 0, no_items)
             
