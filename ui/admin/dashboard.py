@@ -1149,14 +1149,14 @@ class AdminDashboard(QWidget):
             
             # Customer info
             customer_group = QGroupBox("Customer Information")
-            customer_layout = QVBoxLayout(customer_group)
+            customer_layout = QFormLayout(customer_group)
             customer_layout.addRow("Name:", QLabel(order['customer_name']))
             customer_layout.addRow("Phone:", QLabel(order['customer_phone']))
             customer_layout.addRow("Delivery Address:", QLabel(order['customer_address']))
             
             # Restaurant info
             restaurant_group = QGroupBox("Restaurant Information")
-            restaurant_layout = QVBoxLayout(restaurant_group)
+            restaurant_layout = QFormLayout(restaurant_group)
             restaurant_layout.addRow("Name:", QLabel(order['restaurant_name']))
             restaurant_layout.addRow("Address:", QLabel(order['restaurant_address']))
             
