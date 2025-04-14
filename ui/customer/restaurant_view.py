@@ -1,13 +1,15 @@
-from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QPushButton, 
-                            QHBoxLayout, QScrollArea, QFrame, QGridLayout, 
-                            QSizePolicy, QSpacerItem, QMessageBox, QSpinBox)
-from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QFont, QIcon
+from PySide6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QPushButton, 
+                             QHBoxLayout, QScrollArea, QFrame, QGridLayout, 
+                             QSizePolicy, QSpacerItem, QStackedWidget, QMessageBox,
+                             QTableWidget, QTableWidgetItem, QHeaderView, QComboBox,
+                             QSpinBox, QDialog, QFormLayout, QTextEdit)
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QFont, QIcon, QPixmap
 from db_utils import execute_query
 
 class RestaurantView(QWidget):
-    back_to_restaurants = pyqtSignal()
-    add_to_cart = pyqtSignal(dict, int)  # Menu item, quantity
+    back_to_restaurants = Signal()
+    add_to_cart = Signal(dict, int)  # Menu item, quantity
     
     def __init__(self, restaurant_id, parent=None):
         super().__init__(parent)

@@ -1,15 +1,21 @@
-from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QPushButton, 
+from PySide6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QPushButton, 
                             QHBoxLayout, QScrollArea, QFrame, QGridLayout, 
                             QSizePolicy, QSpacerItem, QStackedWidget, QTableWidget,
                             QTableWidgetItem, QHeaderView, QDialog, QFormLayout,
-                            QLineEdit, QComboBox, QMessageBox, QRadioButton, QGroupBox)
-from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QFont, QIcon
+                            QLineEdit, QComboBox, QMessageBox, QRadioButton, QGroupBox,
+                            QDateEdit, QTabWidget)
+from PySide6.QtCore import Qt, Signal, QDate, QDateTime
+from PySide6.QtGui import QFont, QIcon, QPainter
+# Using matplotlib for charts
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.figure import Figure
+import numpy as np
 
 from db_utils import execute_query
 
 class AdminDashboard(QWidget):
-    logout_requested = pyqtSignal()
+    logout_requested = Signal()
     
     def __init__(self, user):
         super().__init__()
@@ -1143,16 +1149,16 @@ class AdminDashboard(QWidget):
             
             # Customer info
             customer_group = QGroupBox("Customer Information")
-            customer_layout = QVBoxLayout(customer_group)
-            customer_layout.addWidget(QLabel(f"Name: {order['customer_name']}"))
-            customer_layout.addWidget(QLabel(f"Phone: {order['customer_phone']}"))
-            customer_layout.addWidget(QLabel(f"Delivery Address: {order['delivery_address']}"))
+            customer_layout = QFormLayout(customer_group)
+            customer_layout.addRow("Name:", QLabel(order['customer_name']))
+            customer_layout.addRow("Phone:", QLabel(order['customer_phone']))
+            customer_layout.addRow("Delivery Address:", QLabel(order['customer_address']))
             
             # Restaurant info
             restaurant_group = QGroupBox("Restaurant Information")
-            restaurant_layout = QVBoxLayout(restaurant_group)
-            restaurant_layout.addWidget(QLabel(f"Name: {order['restaurant_name']}"))
-            restaurant_layout.addWidget(QLabel(f"Address: {order['restaurant_address']}"))
+            restaurant_layout = QFormLayout(restaurant_group)
+            restaurant_layout.addRow("Name:", QLabel(order['restaurant_name']))
+            restaurant_layout.addRow("Address:", QLabel(order['restaurant_address']))
             
             info_layout.addWidget(customer_group)
             info_layout.addWidget(restaurant_group)
@@ -1254,15 +1260,477 @@ class AdminDashboard(QWidget):
         page = QWidget()
         layout = QVBoxLayout(page)
         
-        # Placeholder label
-        label = QLabel("Reports and Analytics")
-        label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        label.setFont(QFont("Arial", 20))
+        # Create a scroll area for the entire content - VERTICAL ONLY
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setFrameShape(QFrame.Shape.NoFrame)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         
-        layout.addWidget(label)
-        layout.addStretch()
+        # Create a widget to hold all the content that will be scrollable
+        content_widget = QWidget()
+        scroll_layout = QVBoxLayout(content_widget)
+        scroll_layout.setContentsMargins(10, 10, 10, 10)
+        scroll_layout.setSpacing(15)
+        
+        # Header section
+        header = QLabel("Reports & Analytics")
+        header.setFont(QFont("Arial", 24, QFont.Weight.Bold))
+        header.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        header.setStyleSheet("color: #ecf0f1; background-color: #2c3e50; padding: 10px; border-radius: 4px;")
+        
+        # Date range selector
+        date_range_layout = QHBoxLayout()
+        date_range_label = QLabel("Date Range:")
+        date_range_label.setStyleSheet("color: #2c3e50;")
+        self.start_date = QDateEdit()
+        self.start_date.setCalendarPopup(True)
+        self.start_date.setDate(QDate.currentDate().addDays(-30))  # Default to last 30 days
+        self.end_date = QDateEdit()
+        self.end_date.setCalendarPopup(True)
+        self.end_date.setDate(QDate.currentDate())
+        
+        # Style the date edit controls
+        date_style = """
+            QDateEdit {
+                background-color: #34495e;
+                color: white;
+                border: 1px solid #3498db;
+                border-radius: 4px;
+                padding: 5px;
+            }
+            QDateEdit::drop-down {
+                subcontrol-origin: padding;
+                subcontrol-position: center right;
+                width: 20px;
+                border-left: 1px solid #3498db;
+            }
+            QCalendarWidget QWidget {
+                background-color: #34495e;
+            }
+            QCalendarWidget QToolButton {
+                color: white;
+                background-color: #2c3e50;
+                border: 1px solid #3498db;
+                border-radius: 4px;
+                padding: 5px;
+            }
+            QCalendarWidget QMenu {
+                color: white;
+                background-color: #2c3e50;
+            }
+            QCalendarWidget QSpinBox {
+                color: white;
+                background-color: #2c3e50;
+                selection-background-color: #3498db;
+                selection-color: white;
+            }
+            QCalendarWidget QAbstractItemView:enabled {
+                color: white;
+                background-color: #2c3e50;
+                selection-background-color: #3498db;
+                selection-color: white;
+            }
+            QCalendarWidget QAbstractItemView:disabled {
+                color: #7f8c8d;
+            }
+        """
+        self.start_date.setStyleSheet(date_style)
+        self.end_date.setStyleSheet(date_style)
+        
+        refresh_btn = QPushButton("Refresh Data")
+        refresh_btn.setObjectName("action-button")
+        refresh_btn.clicked.connect(self.refresh_analytics)
+        
+        date_range_layout.addWidget(date_range_label)
+        date_range_layout.addWidget(self.start_date)
+        date_range_layout.addWidget(QLabel("to"))
+        date_range_layout.addWidget(self.end_date)
+        date_range_layout.addStretch()
+        date_range_layout.addWidget(refresh_btn)
+        
+        # Key metrics cards
+        metrics_layout = QHBoxLayout()
+        
+        # Total Orders Card
+        total_orders_card = QFrame()
+        total_orders_card.setObjectName("metric-card")
+        total_orders_layout = QVBoxLayout(total_orders_card)
+        self.total_orders_label = QLabel("0")
+        self.total_orders_label.setFont(QFont("Arial", 24, QFont.Weight.Bold))
+        total_orders_layout.addWidget(QLabel("Total Orders"))
+        total_orders_layout.addWidget(self.total_orders_label)
+        
+        # Total Revenue Card
+        revenue_card = QFrame()
+        revenue_card.setObjectName("metric-card")
+        revenue_layout = QVBoxLayout(revenue_card)
+        self.revenue_label = QLabel("AED 0.00")
+        self.revenue_label.setFont(QFont("Arial", 24, QFont.Weight.Bold))
+        revenue_layout.addWidget(QLabel("Total Revenue"))
+        revenue_layout.addWidget(self.revenue_label)
+        
+        # Average Order Value Card
+        aov_card = QFrame()
+        aov_card.setObjectName("metric-card")
+        aov_layout = QVBoxLayout(aov_card)
+        self.aov_label = QLabel("AED 0.00")
+        self.aov_label.setFont(QFont("Arial", 24, QFont.Weight.Bold))
+        aov_layout.addWidget(QLabel("Average Order Value"))
+        aov_layout.addWidget(self.aov_label)
+        
+        # Delivery Time Card
+        delivery_time_card = QFrame()
+        delivery_time_card.setObjectName("metric-card")
+        delivery_time_layout = QVBoxLayout(delivery_time_card)
+        self.delivery_time_label = QLabel("0 min")
+        self.delivery_time_label.setFont(QFont("Arial", 24, QFont.Weight.Bold))
+        delivery_time_layout.addWidget(QLabel("Avg. Delivery Time"))
+        delivery_time_layout.addWidget(self.delivery_time_label)
+        
+        metrics_layout.addWidget(total_orders_card)
+        metrics_layout.addWidget(revenue_card)
+        metrics_layout.addWidget(aov_card)
+        metrics_layout.addWidget(delivery_time_card)
+        
+        # Charts section - ORIGINAL SIZES
+        charts_layout = QHBoxLayout()
+        
+        # Orders by Status Chart
+        status_chart_card = QFrame()
+        status_chart_card.setObjectName("chart-card")
+        status_chart_layout = QVBoxLayout(status_chart_card)
+        status_chart_layout.addWidget(QLabel("Orders by Status"))
+        
+        # Create a frame for the chart with its own layout
+        self.status_chart = QFrame()
+        self.status_chart.setMinimumHeight(300)  # Original size
+        chart_layout = QVBoxLayout(self.status_chart)
+        chart_layout.setContentsMargins(0, 0, 0, 0)
+        status_chart_layout.addWidget(self.status_chart)
+        
+        # Revenue Trend Chart
+        revenue_chart_card = QFrame()
+        revenue_chart_card.setObjectName("chart-card")
+        revenue_chart_layout = QVBoxLayout(revenue_chart_card)
+        revenue_chart_layout.addWidget(QLabel("Revenue Trend"))
+        
+        # Create a frame for the chart with its own layout
+        self.revenue_chart = QFrame()
+        self.revenue_chart.setMinimumHeight(300)  # Original size
+        chart_layout = QVBoxLayout(self.revenue_chart)
+        chart_layout.setContentsMargins(0, 0, 0, 0)
+        revenue_chart_layout.addWidget(self.revenue_chart)
+        
+        charts_layout.addWidget(status_chart_card)
+        charts_layout.addWidget(revenue_chart_card)
+        
+        # Detailed Reports Section - MORE SPACE
+        reports_tabs = QTabWidget()
+        reports_tabs.setMinimumHeight(300)  # More space for tables
+        
+        # Top Restaurants Tab
+        restaurants_tab = QWidget()
+        restaurants_layout = QVBoxLayout(restaurants_tab)
+        self.top_restaurants_table = QTableWidget()
+        self.top_restaurants_table.setColumnCount(5)
+        self.top_restaurants_table.setHorizontalHeaderLabels(["Restaurant", "Orders", "Revenue", "Rating", "Completion Rate"])
+        self.top_restaurants_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        restaurants_layout.addWidget(self.top_restaurants_table)
+        
+        # Top Delivery Personnel Tab
+        delivery_tab = QWidget()
+        delivery_layout = QVBoxLayout(delivery_tab)
+        self.top_delivery_table = QTableWidget()
+        self.top_delivery_table.setColumnCount(5)
+        self.top_delivery_table.setHorizontalHeaderLabels(["Name", "Deliveries", "Rating", "Avg. Time", "On-time Rate"])
+        self.top_delivery_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        delivery_layout.addWidget(self.top_delivery_table)
+        
+        # Customer Insights Tab
+        customer_tab = QWidget()
+        customer_layout = QVBoxLayout(customer_tab)
+        self.customer_insights_table = QTableWidget()
+        self.customer_insights_table.setColumnCount(5)
+        self.customer_insights_table.setHorizontalHeaderLabels(["Customer", "Orders", "Total Spent", "Avg. Order Value", "Last Order"])
+        self.customer_insights_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        customer_layout.addWidget(self.customer_insights_table)
+        
+        reports_tabs.addTab(restaurants_tab, "Top Restaurants")
+        reports_tabs.addTab(delivery_tab, "Delivery Performance")
+        reports_tabs.addTab(customer_tab, "Customer Insights")
+        
+        # Add all sections to scroll layout
+        scroll_layout.addWidget(header)
+        scroll_layout.addLayout(date_range_layout)
+        scroll_layout.addLayout(metrics_layout)
+        scroll_layout.addLayout(charts_layout)
+        scroll_layout.addWidget(reports_tabs)
+        
+        # Set scroll area widget and add to main layout
+        scroll_area.setWidget(content_widget)
+        layout.addWidget(scroll_area)
+        
+        # Set styles
+        page.setStyleSheet("""
+            QFrame#metric-card {
+                background-color: #34495e;
+                border-radius: 8px;
+                padding: 15px;
+                min-width: 200px;
+            }
+            QFrame#chart-card {
+                background-color: #34495e;
+                border-radius: 8px;
+                padding: 15px;
+                min-width: 400px;
+            }
+            QLabel {
+                color: white;
+            }
+            QTableWidget {
+                background-color: #34495e;
+                color: white;
+                gridline-color: #7f8c8d;
+                alternate-background-color: #2c3e50;
+            }
+            QHeaderView::section {
+                background-color: #2c3e50;
+                color: white;
+                padding: 5px;
+                border: none;
+                font-weight: bold;
+            }
+            QTabWidget::pane {
+                border: 1px solid #7f8c8d;
+                background-color: #34495e;
+            }
+            QTabBar::tab {
+                background-color: #2c3e50;
+                color: white;
+                padding: 8px 15px;
+                border: 1px solid #7f8c8d;
+                border-bottom: none;
+                border-top-left-radius: 4px;
+                border-top-right-radius: 4px;
+            }
+            QTabBar::tab:selected {
+                background-color: #34495e;
+            }
+            QScrollArea {
+                border: none;
+                background-color: transparent;
+            }
+            QScrollBar:vertical {
+                background-color: #2c3e50;
+                width: 10px;
+                margin: 0px;
+            }
+            QScrollBar::handle:vertical {
+                background-color: #3498db;
+                border-radius: 5px;
+                min-height: 20px;
+            }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+                height: 0px;
+            }
+        """)
+        
+        # Load initial data
+        self.refresh_analytics()
         
         return page
+    
+    def refresh_analytics(self):
+        """Refresh all analytics data based on selected date range"""
+        start_date = self.start_date.date().toString("yyyy-MM-dd")
+        end_date = self.end_date.date().toString("yyyy-MM-dd")
+        
+        try:
+            # Get key metrics
+            metrics_query = """
+                SELECT 
+                    COUNT(*) as total_orders,
+                    SUM(total_amount) as total_revenue,
+                    AVG(total_amount) as avg_order_value,
+                    AVG(TIMESTAMPDIFF(MINUTE, order_time, actual_delivery_time)) as avg_delivery_time
+                FROM orders 
+                WHERE order_time BETWEEN %s AND %s
+            """
+            metrics = execute_query(metrics_query, (start_date, end_date))
+            
+            if metrics and metrics[0]:
+                self.total_orders_label.setText(str(metrics[0]['total_orders']))
+                self.revenue_label.setText(f"AED {float(metrics[0]['total_revenue'] or 0):.2f}")
+                self.aov_label.setText(f"AED {float(metrics[0]['avg_order_value'] or 0):.2f}")
+                self.delivery_time_label.setText(f"{int(metrics[0]['avg_delivery_time'] or 0)} min")
+            
+            # Get orders by status
+            status_query = """
+                SELECT delivery_status, COUNT(*) as count
+                FROM orders
+                WHERE order_time BETWEEN %s AND %s
+                GROUP BY delivery_status
+            """
+            status_data = execute_query(status_query, (start_date, end_date))
+            
+            # Get revenue trend
+            revenue_query = """
+                SELECT DATE(order_time) as date, SUM(total_amount) as revenue
+                FROM orders
+                WHERE order_time BETWEEN %s AND %s
+                GROUP BY DATE(order_time)
+                ORDER BY date
+            """
+            revenue_data = execute_query(revenue_query, (start_date, end_date))
+            
+            # Clear previous charts
+            for i in reversed(range(self.status_chart.layout().count())): 
+                widget = self.status_chart.layout().itemAt(i).widget()
+                if widget:
+                    widget.setParent(None)
+            
+            for i in reversed(range(self.revenue_chart.layout().count())): 
+                widget = self.revenue_chart.layout().itemAt(i).widget()
+                if widget:
+                    widget.setParent(None)
+            
+            # Create status pie chart with matplotlib
+            if status_data:
+                status_fig = Figure(figsize=(5, 4), dpi=100)
+                status_canvas = FigureCanvas(status_fig)
+                ax = status_fig.add_subplot(111)
+                
+                labels = [item['delivery_status'] for item in status_data]
+                sizes = [item['count'] for item in status_data]
+                
+                # Use a colorful palette
+                colors = plt.cm.Paired(np.arange(len(labels))/len(labels))
+                
+                ax.pie(sizes, labels=labels, autopct='%1.1f%%', 
+                      startangle=90, colors=colors)
+                ax.axis('equal')  # Equal aspect ratio ensures circular pie
+                
+                # Clear previous chart if any
+                for i in reversed(range(self.status_chart.layout().count())): 
+                    widget = self.status_chart.layout().itemAt(i).widget()
+                    if widget:
+                        widget.setParent(None)
+                
+                # Add the canvas to the layout
+                self.status_chart.layout().addWidget(status_canvas)
+                status_fig.tight_layout()
+                status_canvas.draw()
+            
+            # Create revenue trend chart with matplotlib
+            if revenue_data:
+                revenue_fig = Figure(figsize=(5, 4), dpi=100)
+                revenue_canvas = FigureCanvas(revenue_fig)
+                ax = revenue_fig.add_subplot(111)
+                
+                dates = [item['date'] for item in revenue_data]
+                revenue_values = [float(item['revenue']) for item in revenue_data]
+                
+                ax.plot(dates, revenue_values, 'o-', color='#3498db', linewidth=2)
+                ax.set_title('Revenue Trend')
+                ax.set_ylabel('Revenue (AED)')
+                ax.grid(True, linestyle='--', alpha=0.7)
+                
+                # Rotate date labels for better readability
+                plt.setp(ax.get_xticklabels(), rotation=45, ha='right')
+                
+                # Clear previous chart if any
+                for i in reversed(range(self.revenue_chart.layout().count())): 
+                    widget = self.revenue_chart.layout().itemAt(i).widget()
+                    if widget:
+                        widget.setParent(None)
+                
+                # Add the canvas to the layout
+                self.revenue_chart.layout().addWidget(revenue_canvas)
+                revenue_fig.tight_layout()
+                revenue_canvas.draw()
+            
+            # Get top restaurants
+            restaurants_query = """
+                SELECT 
+                    r.name,
+                    COUNT(o.order_id) as order_count,
+                    SUM(o.total_amount) as revenue,
+                    r.rating,
+                    AVG(CASE WHEN o.delivery_status = 'Delivered' THEN 1 ELSE 0 END) * 100 as completion_rate
+                FROM restaurants r
+                JOIN orders o ON r.restaurant_id = o.restaurant_id
+                WHERE o.order_time BETWEEN %s AND %s
+                GROUP BY r.restaurant_id
+                ORDER BY revenue DESC
+                LIMIT 10
+            """
+            restaurants_data = execute_query(restaurants_query, (start_date, end_date))
+            
+            if restaurants_data:
+                self.top_restaurants_table.setRowCount(len(restaurants_data))
+                for i, restaurant in enumerate(restaurants_data):
+                    self.top_restaurants_table.setItem(i, 0, QTableWidgetItem(restaurant['name']))
+                    self.top_restaurants_table.setItem(i, 1, QTableWidgetItem(str(restaurant['order_count'])))
+                    self.top_restaurants_table.setItem(i, 2, QTableWidgetItem(f"AED {float(restaurant['revenue']):.2f}"))
+                    self.top_restaurants_table.setItem(i, 3, QTableWidgetItem(f"{float(restaurant['rating']):.1f}"))
+                    self.top_restaurants_table.setItem(i, 4, QTableWidgetItem(f"{float(restaurant['completion_rate']):.1f}%"))
+            
+            # Get top delivery personnel
+            delivery_query = """
+                SELECT 
+                    dp.name,
+                    COUNT(o.order_id) as delivery_count,
+                    AVG(r.delivery_rating) as rating,
+                    AVG(TIMESTAMPDIFF(MINUTE, o.order_time, o.actual_delivery_time)) as avg_time,
+                    AVG(CASE WHEN o.actual_delivery_time <= o.estimated_delivery_time THEN 1 ELSE 0 END) * 100 as on_time_rate
+                FROM delivery_personnel dp
+                JOIN orders o ON dp.delivery_person_id = o.delivery_person_id
+                LEFT JOIN ratings r ON o.order_id = r.order_id
+                WHERE o.order_time BETWEEN %s AND %s
+                GROUP BY dp.delivery_person_id
+                ORDER BY delivery_count DESC
+                LIMIT 10
+            """
+            delivery_data = execute_query(delivery_query, (start_date, end_date))
+            
+            if delivery_data:
+                self.top_delivery_table.setRowCount(len(delivery_data))
+                for i, delivery in enumerate(delivery_data):
+                    self.top_delivery_table.setItem(i, 0, QTableWidgetItem(delivery['name']))
+                    self.top_delivery_table.setItem(i, 1, QTableWidgetItem(str(delivery['delivery_count'])))
+                    self.top_delivery_table.setItem(i, 2, QTableWidgetItem(f"{float(delivery['rating'] or 0):.1f}"))
+                    self.top_delivery_table.setItem(i, 3, QTableWidgetItem(f"{int(delivery['avg_time'] or 0)} min"))
+                    self.top_delivery_table.setItem(i, 4, QTableWidgetItem(f"{float(delivery['on_time_rate'] or 0):.1f}%"))
+            
+            # Get customer insights
+            customer_query = """
+                SELECT 
+                    c.name,
+                    COUNT(o.order_id) as order_count,
+                    SUM(o.total_amount) as total_spent,
+                    AVG(o.total_amount) as avg_order_value,
+                    MAX(o.order_time) as last_order
+                FROM customers c
+                JOIN orders o ON c.customer_id = o.customer_id
+                WHERE o.order_time BETWEEN %s AND %s
+                GROUP BY c.customer_id
+                ORDER BY total_spent DESC
+                LIMIT 10
+            """
+            customer_data = execute_query(customer_query, (start_date, end_date))
+            
+            if customer_data:
+                self.customer_insights_table.setRowCount(len(customer_data))
+                for i, customer in enumerate(customer_data):
+                    self.customer_insights_table.setItem(i, 0, QTableWidgetItem(customer['name']))
+                    self.customer_insights_table.setItem(i, 1, QTableWidgetItem(str(customer['order_count'])))
+                    self.customer_insights_table.setItem(i, 2, QTableWidgetItem(f"AED {float(customer['total_spent']):.2f}"))
+                    self.customer_insights_table.setItem(i, 3, QTableWidgetItem(f"AED {float(customer['avg_order_value']):.2f}"))
+                    self.customer_insights_table.setItem(i, 4, QTableWidgetItem(customer['last_order'].strftime("%Y-%m-%d %H:%M")))
+                    
+        except Exception as e:
+            print(f"Error refreshing analytics: {e}")
+            QMessageBox.critical(self, "Error", f"Failed to load analytics data: {str(e)}")
     
     def create_settings_page(self):
         page = QWidget()

@@ -52,7 +52,7 @@ A comprehensive food delivery platform that connects customers, restaurants, and
 ### 1. Install Python
 
 #### Windows
-1. Download Python 3.11 from the [official website](https://www.python.org/downloads/)
+1. Download Python 3.9 or 3.10 from the [official website](https://www.python.org/downloads/)
 2. Run the installer
 3. **Important**: Check the box that says "Add Python to PATH" during installation
 4. Complete the installation
@@ -64,7 +64,7 @@ A comprehensive food delivery platform that connects customers, restaurants, and
    ```
 2. Install Python using Homebrew:
    ```bash
-   brew install python@3.11
+   brew install python@3.9
    ```
 
 ### 2. Install MySQL
@@ -116,20 +116,20 @@ DB_PASSWORD=your_mysql_password
 DB_NAME=food_delivery
 ```
 
-### 5. Install Required Python Packages
+### 5. Set Up a Virtual Environment and Install Required Packages
 
 1. Create and activate a virtual environment:
 
 #### Windows
 ```bash
-python -m venv .venv
-.venv\Scripts\activate
+python -m venv .venv-pyside
+.\.venv-pyside\Scripts\activate
 ```
 
 #### macOS
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
+python3 -m venv .venv-pyside
+source .venv-pyside/bin/activate
 ```
 
 2. Install the required packages:
@@ -152,6 +152,13 @@ pip install -r requirements.txt
    python main.py
    ```
 2. The application will start with the login screen
+
+## Technical Notes
+
+- The application uses PySide6 for the UI components
+- Charts and visualizations in the admin dashboard are rendered using matplotlib
+- MySQL is used for database storage
+- All database interactions are handled through the db_utils.py module
 
 ## User Guide
 

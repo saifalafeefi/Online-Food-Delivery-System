@@ -1,8 +1,8 @@
 import sys
 import os
-from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QStackedWidget
-from PyQt6.QtCore import Qt, QSize
-from PyQt6.QtGui import QFont, QIcon
+from PySide6.QtWidgets import QApplication, QMainWindow, QWidget, QStackedWidget
+from PySide6.QtCore import Qt, QSize
+from PySide6.QtGui import QFont, QIcon
 from db_utils import test_connection
 
 from auth.user import User, UserRole
@@ -129,7 +129,7 @@ if __name__ == "__main__":
     
     # Test database connection
     if not test_connection():
-        from PyQt6.QtWidgets import QMessageBox
+        from PySide6.QtWidgets import QMessageBox
         msg = QMessageBox()
         msg.setIcon(QMessageBox.Icon.Critical)
         msg.setWindowTitle("Database Error")
