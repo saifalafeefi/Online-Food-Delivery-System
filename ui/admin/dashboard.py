@@ -1338,9 +1338,12 @@ class AdminDashboard(QWidget):
         status_chart_card.setObjectName("chart-card")
         status_chart_layout = QVBoxLayout(status_chart_card)
         status_chart_layout.addWidget(QLabel("Orders by Status"))
+        
+        # Create a frame for the chart with its own layout
         self.status_chart = QFrame()
-        self.status_chart.setLayout(QVBoxLayout())
         self.status_chart.setMinimumHeight(300)
+        chart_layout = QVBoxLayout(self.status_chart)
+        chart_layout.setContentsMargins(0, 0, 0, 0)
         status_chart_layout.addWidget(self.status_chart)
         
         # Revenue Trend Chart
@@ -1348,9 +1351,12 @@ class AdminDashboard(QWidget):
         revenue_chart_card.setObjectName("chart-card")
         revenue_chart_layout = QVBoxLayout(revenue_chart_card)
         revenue_chart_layout.addWidget(QLabel("Revenue Trend"))
+        
+        # Create a frame for the chart with its own layout
         self.revenue_chart = QFrame()
-        self.revenue_chart.setLayout(QVBoxLayout())
         self.revenue_chart.setMinimumHeight(300)
+        chart_layout = QVBoxLayout(self.revenue_chart)
+        chart_layout.setContentsMargins(0, 0, 0, 0)
         revenue_chart_layout.addWidget(self.revenue_chart)
         
         charts_layout.addWidget(status_chart_card)
@@ -1495,10 +1501,14 @@ class AdminDashboard(QWidget):
             
             # Clear previous charts
             for i in reversed(range(self.status_chart.layout().count())): 
-                self.status_chart.layout().itemAt(i).widget().setParent(None)
+                widget = self.status_chart.layout().itemAt(i).widget()
+                if widget:
+                    widget.setParent(None)
             
             for i in reversed(range(self.revenue_chart.layout().count())): 
-                self.revenue_chart.layout().itemAt(i).widget().setParent(None)
+                widget = self.revenue_chart.layout().itemAt(i).widget()
+                if widget:
+                    widget.setParent(None)
             
             # Create status pie chart with matplotlib
             if status_data:
@@ -1516,8 +1526,14 @@ class AdminDashboard(QWidget):
                       startangle=90, colors=colors)
                 ax.axis('equal')  # Equal aspect ratio ensures circular pie
                 
-                status_layout = QVBoxLayout(self.status_chart)
-                status_layout.addWidget(status_canvas)
+                # Clear previous chart if any
+                for i in reversed(range(self.status_chart.layout().count())): 
+                    widget = self.status_chart.layout().itemAt(i).widget()
+                    if widget:
+                        widget.setParent(None)
+                
+                # Add the canvas to the layout
+                self.status_chart.layout().addWidget(status_canvas)
                 status_fig.tight_layout()
                 status_canvas.draw()
             
@@ -1538,8 +1554,14 @@ class AdminDashboard(QWidget):
                 # Rotate date labels for better readability
                 plt.setp(ax.get_xticklabels(), rotation=45, ha='right')
                 
-                revenue_layout = QVBoxLayout(self.revenue_chart)
-                revenue_layout.addWidget(revenue_canvas)
+                # Clear previous chart if any
+                for i in reversed(range(self.revenue_chart.layout().count())): 
+                    widget = self.revenue_chart.layout().itemAt(i).widget()
+                    if widget:
+                        widget.setParent(None)
+                
+                # Add the canvas to the layout
+                self.revenue_chart.layout().addWidget(revenue_canvas)
                 revenue_fig.tight_layout()
                 revenue_canvas.draw()
             
