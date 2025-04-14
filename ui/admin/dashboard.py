@@ -1260,20 +1260,82 @@ class AdminDashboard(QWidget):
         page = QWidget()
         layout = QVBoxLayout(page)
         
+        # Create a scroll area for the entire content - VERTICAL ONLY
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setFrameShape(QFrame.Shape.NoFrame)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        
+        # Create a widget to hold all the content that will be scrollable
+        content_widget = QWidget()
+        scroll_layout = QVBoxLayout(content_widget)
+        scroll_layout.setContentsMargins(10, 10, 10, 10)
+        scroll_layout.setSpacing(15)
+        
         # Header section
         header = QLabel("Reports & Analytics")
         header.setFont(QFont("Arial", 24, QFont.Weight.Bold))
         header.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        header.setStyleSheet("color: #ecf0f1; background-color: #2c3e50; padding: 10px; border-radius: 4px;")
         
         # Date range selector
         date_range_layout = QHBoxLayout()
         date_range_label = QLabel("Date Range:")
+        date_range_label.setStyleSheet("color: #2c3e50;")
         self.start_date = QDateEdit()
         self.start_date.setCalendarPopup(True)
         self.start_date.setDate(QDate.currentDate().addDays(-30))  # Default to last 30 days
         self.end_date = QDateEdit()
         self.end_date.setCalendarPopup(True)
         self.end_date.setDate(QDate.currentDate())
+        
+        # Style the date edit controls
+        date_style = """
+            QDateEdit {
+                background-color: #34495e;
+                color: white;
+                border: 1px solid #3498db;
+                border-radius: 4px;
+                padding: 5px;
+            }
+            QDateEdit::drop-down {
+                subcontrol-origin: padding;
+                subcontrol-position: center right;
+                width: 20px;
+                border-left: 1px solid #3498db;
+            }
+            QCalendarWidget QWidget {
+                background-color: #34495e;
+            }
+            QCalendarWidget QToolButton {
+                color: white;
+                background-color: #2c3e50;
+                border: 1px solid #3498db;
+                border-radius: 4px;
+                padding: 5px;
+            }
+            QCalendarWidget QMenu {
+                color: white;
+                background-color: #2c3e50;
+            }
+            QCalendarWidget QSpinBox {
+                color: white;
+                background-color: #2c3e50;
+                selection-background-color: #3498db;
+                selection-color: white;
+            }
+            QCalendarWidget QAbstractItemView:enabled {
+                color: white;
+                background-color: #2c3e50;
+                selection-background-color: #3498db;
+                selection-color: white;
+            }
+            QCalendarWidget QAbstractItemView:disabled {
+                color: #7f8c8d;
+            }
+        """
+        self.start_date.setStyleSheet(date_style)
+        self.end_date.setStyleSheet(date_style)
         
         refresh_btn = QPushButton("Refresh Data")
         refresh_btn.setObjectName("action-button")
@@ -1330,7 +1392,7 @@ class AdminDashboard(QWidget):
         metrics_layout.addWidget(aov_card)
         metrics_layout.addWidget(delivery_time_card)
         
-        # Charts section
+        # Charts section - ORIGINAL SIZES
         charts_layout = QHBoxLayout()
         
         # Orders by Status Chart
@@ -1341,7 +1403,7 @@ class AdminDashboard(QWidget):
         
         # Create a frame for the chart with its own layout
         self.status_chart = QFrame()
-        self.status_chart.setMinimumHeight(300)
+        self.status_chart.setMinimumHeight(300)  # Original size
         chart_layout = QVBoxLayout(self.status_chart)
         chart_layout.setContentsMargins(0, 0, 0, 0)
         status_chart_layout.addWidget(self.status_chart)
@@ -1354,7 +1416,7 @@ class AdminDashboard(QWidget):
         
         # Create a frame for the chart with its own layout
         self.revenue_chart = QFrame()
-        self.revenue_chart.setMinimumHeight(300)
+        self.revenue_chart.setMinimumHeight(300)  # Original size
         chart_layout = QVBoxLayout(self.revenue_chart)
         chart_layout.setContentsMargins(0, 0, 0, 0)
         revenue_chart_layout.addWidget(self.revenue_chart)
@@ -1362,8 +1424,9 @@ class AdminDashboard(QWidget):
         charts_layout.addWidget(status_chart_card)
         charts_layout.addWidget(revenue_chart_card)
         
-        # Detailed Reports Section
+        # Detailed Reports Section - MORE SPACE
         reports_tabs = QTabWidget()
+        reports_tabs.setMinimumHeight(300)  # More space for tables
         
         # Top Restaurants Tab
         restaurants_tab = QWidget()
@@ -1396,12 +1459,16 @@ class AdminDashboard(QWidget):
         reports_tabs.addTab(delivery_tab, "Delivery Performance")
         reports_tabs.addTab(customer_tab, "Customer Insights")
         
-        # Add all sections to main layout
-        layout.addWidget(header)
-        layout.addLayout(date_range_layout)
-        layout.addLayout(metrics_layout)
-        layout.addLayout(charts_layout)
-        layout.addWidget(reports_tabs)
+        # Add all sections to scroll layout
+        scroll_layout.addWidget(header)
+        scroll_layout.addLayout(date_range_layout)
+        scroll_layout.addLayout(metrics_layout)
+        scroll_layout.addLayout(charts_layout)
+        scroll_layout.addWidget(reports_tabs)
+        
+        # Set scroll area widget and add to main layout
+        scroll_area.setWidget(content_widget)
+        layout.addWidget(scroll_area)
         
         # Set styles
         page.setStyleSheet("""
@@ -1448,6 +1515,23 @@ class AdminDashboard(QWidget):
             }
             QTabBar::tab:selected {
                 background-color: #34495e;
+            }
+            QScrollArea {
+                border: none;
+                background-color: transparent;
+            }
+            QScrollBar:vertical {
+                background-color: #2c3e50;
+                width: 10px;
+                margin: 0px;
+            }
+            QScrollBar::handle:vertical {
+                background-color: #3498db;
+                border-radius: 5px;
+                min-height: 20px;
+            }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+                height: 0px;
             }
         """)
         
