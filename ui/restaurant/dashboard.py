@@ -1,15 +1,15 @@
-from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QPushButton, 
-                            QHBoxLayout, QScrollArea, QFrame, QGridLayout, 
-                            QSizePolicy, QSpacerItem, QStackedWidget, QTableWidget,
-                            QTableWidgetItem, QHeaderView, QDialog, QFormLayout,
-                            QLineEdit, QComboBox, QMessageBox, QSpinBox, QTextEdit,
-                            QDoubleSpinBox, QTabWidget)
-from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QFont, QIcon
+from PySide6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QPushButton, 
+                             QHBoxLayout, QScrollArea, QFrame, QGridLayout, 
+                             QSizePolicy, QSpacerItem, QStackedWidget, QTableWidget,
+                             QTableWidgetItem, QHeaderView, QDialog, QFormLayout,
+                             QLineEdit, QComboBox, QMessageBox, QSpinBox, QTextEdit,
+                             QDoubleSpinBox, QTabWidget)
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QFont, QIcon
 from db_utils import execute_query
 
 class RestaurantDashboard(QWidget):
-    logout_requested = pyqtSignal()
+    logout_requested = Signal()
     
     def __init__(self, user):
         super().__init__()

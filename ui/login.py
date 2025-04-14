@@ -1,9 +1,9 @@
-from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QLineEdit, 
+from PySide6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QLineEdit, 
                             QPushButton, QFormLayout, QComboBox, QMessageBox,
                             QDialog, QHBoxLayout, QGroupBox, QRadioButton,
-                            QGridLayout, QCheckBox)
-from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QPixmap, QFont, QIcon
+                            QGridLayout, QCheckBox, QFrame, QSpacerItem, QSizePolicy)
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QPixmap, QFont, QIcon
 from auth.user import User, UserRole
 from db_utils import execute_query
 import json
@@ -11,8 +11,8 @@ import os
 import hashlib
 
 class LoginWindow(QWidget):
-    login_successful = pyqtSignal(object)
-    switch_to_register = pyqtSignal()
+    login_successful = Signal(object)
+    switch_to_register = Signal()
     
     def __init__(self):
         super().__init__()
@@ -204,8 +204,8 @@ class LoginWindow(QWidget):
 
 
 class RegisterWindow(QWidget):
-    register_successful = pyqtSignal(User)
-    switch_to_login = pyqtSignal()
+    register_successful = Signal(User)
+    switch_to_login = Signal()
     
     def __init__(self):
         super().__init__()

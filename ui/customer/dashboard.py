@@ -1,10 +1,10 @@
-from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QPushButton, 
-                            QHBoxLayout, QScrollArea, QFrame, QGridLayout, 
-                            QSizePolicy, QSpacerItem, QStackedWidget, QMessageBox,
-                            QTableWidget, QTableWidgetItem, QDialog, QFormLayout,
-                            QLineEdit, QComboBox, QHeaderView)
-from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QFont, QIcon, QPixmap
+from PySide6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QPushButton, 
+                             QHBoxLayout, QScrollArea, QFrame, QGridLayout, 
+                             QSizePolicy, QSpacerItem, QStackedWidget, QMessageBox,
+                             QTableWidget, QTableWidgetItem, QDialog, QFormLayout,
+                             QLineEdit, QComboBox, QHeaderView)
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QFont, QIcon, QPixmap
 import os
 
 from ui.customer.restaurant_view import RestaurantView
@@ -111,7 +111,7 @@ class SearchDialog(QDialog):
             self.order_fields.show()
 
 class CustomerDashboard(QWidget):
-    logout_requested = pyqtSignal()
+    logout_requested = Signal()
     
     def __init__(self, user):
         super().__init__()

@@ -1,16 +1,16 @@
-from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QPushButton, 
-                            QHBoxLayout, QScrollArea, QFrame, QGridLayout, 
-                            QSizePolicy, QSpacerItem, QStackedWidget, QMessageBox,
-                            QTableWidget, QTableWidgetItem, QHeaderView, QFormLayout,
-                            QLineEdit, QComboBox, QRadioButton, QButtonGroup)
-from PyQt6.QtCore import Qt, pyqtSignal, QTimer
-from PyQt6.QtGui import QFont, QIcon, QPixmap
+from PySide6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QPushButton, 
+                             QHBoxLayout, QScrollArea, QFrame, QGridLayout, 
+                             QSizePolicy, QSpacerItem, QStackedWidget, QMessageBox,
+                             QTableWidget, QTableWidgetItem, QHeaderView, QFormLayout,
+                             QLineEdit, QComboBox, QRadioButton, QButtonGroup)
+from PySide6.QtCore import Qt, Signal, QTimer
+from PySide6.QtGui import QFont, QIcon, QPixmap
 from db_utils import execute_query
 from datetime import datetime
 import os
 
 class DeliveryDashboard(QWidget):
-    logout_requested = pyqtSignal()
+    logout_requested = Signal()
     
     def __init__(self, user):
         super().__init__()
