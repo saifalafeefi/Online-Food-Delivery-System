@@ -37,6 +37,10 @@ def get_connection_config():
             # If that fails, try with auth_plugin
             config['auth_plugin'] = 'caching_sha2_password'
     
+    # For Windows, specify auth_plugin as we've set to mysql_native_password
+    if platform.system() == 'Windows':
+        config['auth_plugin'] = 'mysql_native_password'
+    
     return config
 
 def test_connection():

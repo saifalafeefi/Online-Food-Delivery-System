@@ -1,6 +1,6 @@
 # Online Food Delivery System
 
-![Version](https://img.shields.io/badge/version-2.3.0-blue.svg)
+![Version](https://img.shields.io/badge/version-2.3.1-blue.svg)
 
 A comprehensive food delivery platform that connects customers, restaurants, and delivery personnel, similar to commercial services like DoorDash, Deliveroo, and Talabat. The application features multiple interfaces for different user roles and real-time order tracking.
 
@@ -122,14 +122,14 @@ DB_NAME=food_delivery
 
 #### Windows
 ```bash
-python -m venv .venv-pyside
-.\.venv-pyside\Scripts\activate
+python -m venv .venv
+.\.venv\Scripts\activate
 ```
 
 #### macOS
 ```bash
-python3 -m venv .venv-pyside
-source .venv-pyside/bin/activate
+python3 -m venv .venv
+source .venv/bin/activate
 ```
 
 2. Install the required packages:
