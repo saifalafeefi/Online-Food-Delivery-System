@@ -3,7 +3,7 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QPushButton,
                             QSizePolicy, QSpacerItem, QStackedWidget, QTableWidget,
                             QTableWidgetItem, QHeaderView, QDialog, QFormLayout,
                             QLineEdit, QComboBox, QMessageBox, QRadioButton, QGroupBox,
-                            QDateEdit, QTabWidget)
+                            QDateEdit, QTabWidget, QCheckBox, QProgressDialog, QApplication)
 from PySide6.QtCore import Qt, Signal, QDate, QDateTime
 from PySide6.QtGui import QFont, QIcon, QPainter
 # Using matplotlib for charts
@@ -11,6 +11,8 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 import numpy as np
+import time
+import re
 
 from db_utils import execute_query
 
@@ -1736,15 +1738,812 @@ class AdminDashboard(QWidget):
         page = QWidget()
         layout = QVBoxLayout(page)
         
-        # Placeholder label
-        label = QLabel("System Settings")
-        label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        label.setFont(QFont("Arial", 20))
+        # Header
+        header = QLabel("System Settings")
+        header.setFont(QFont("Arial", 24, QFont.Weight.Bold))
+        header.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        header.setStyleSheet("color: #ecf0f1; background-color: #2c3e50; padding: 10px; border-radius: 4px; margin-bottom: 15px;")
         
-        layout.addWidget(label)
-        layout.addStretch()
+        # Create a tab widget for different setting categories
+        tabs = QTabWidget()
+        
+        # 1. General Settings Tab
+        general_tab = QWidget()
+        general_layout = QVBoxLayout(general_tab)
+        
+        # App settings group
+        app_group = QGroupBox("Application Settings")
+        app_group.setStyleSheet("QGroupBox { color: white; border: 1px solid #3498db; border-radius: 5px; margin-top: 15px; padding-top: 10px; }")
+        app_layout = QFormLayout(app_group)
+        
+        # App Name
+        self.app_name_input = QLineEdit("Food Delivery System")
+        app_layout.addRow("Application Name:", self.app_name_input)
+        
+        # Remove Language selector and keep only necessary settings
+        
+        # Currency selector
+        self.currency_selector = QComboBox()
+        self.currency_selector.addItems(["AED", "USD", "EUR", "GBP", "CNY"])
+        self.currency_selector.setCurrentText("AED")
+        app_layout.addRow("Default Currency:", self.currency_selector)
+        
+        # Timezone selector
+        self.timezone_selector = QComboBox()
+        self.timezone_selector.addItems(["UTC", "UTC+4 (UAE)", "UTC+3 (KSA)", "UTC+1 (CET)", "UTC-5 (EST)"])
+        self.timezone_selector.setCurrentText("UTC+4 (UAE)")
+        app_layout.addRow("Default Timezone:", self.timezone_selector)
+        
+        # 2. Business Rules Group
+        business_group = QGroupBox("Business Rules")
+        business_group.setStyleSheet("QGroupBox { color: white; border: 1px solid #3498db; border-radius: 5px; margin-top: 15px; padding-top: 10px; }")
+        business_layout = QFormLayout(business_group)
+        
+        # Default delivery fee
+        self.delivery_fee_input = QLineEdit("10.00")
+        business_layout.addRow("Default Delivery Fee (AED):", self.delivery_fee_input)
+        
+        # Default tax rate
+        self.tax_rate_input = QLineEdit("5.0")
+        business_layout.addRow("Default Tax Rate (%):", self.tax_rate_input)
+        
+        # Minimum order amount
+        self.min_order_input = QLineEdit("25.00")
+        business_layout.addRow("Minimum Order Amount (AED):", self.min_order_input)
+        
+        # Service fee
+        self.service_fee_input = QLineEdit("2.0")
+        business_layout.addRow("Service Fee (%):", self.service_fee_input)
+        
+        # Add groups to general tab layout
+        general_layout.addWidget(app_group)
+        general_layout.addWidget(business_group)
+        general_layout.addStretch()
+        
+        # 2. Order Settings Tab
+        order_tab = QWidget()
+        order_layout = QVBoxLayout(order_tab)
+        
+        # Order behavior group
+        order_group = QGroupBox("Order Processing")
+        order_group.setStyleSheet("QGroupBox { color: white; border: 1px solid #3498db; border-radius: 5px; margin-top: 15px; padding-top: 10px; }")
+        order_form = QFormLayout(order_group)
+        
+        # Auto-assign delivery
+        self.auto_assign_checkbox = QCheckBox()
+        self.auto_assign_checkbox.setChecked(True)
+        order_form.addRow("Auto-assign Delivery Personnel:", self.auto_assign_checkbox)
+        
+        # Order prep time
+        self.prep_time_input = QLineEdit("30")
+        order_form.addRow("Default Preparation Time (min):", self.prep_time_input)
+        
+        # Delivery radius
+        self.delivery_radius_input = QLineEdit("10")
+        order_form.addRow("Maximum Delivery Radius (km):", self.delivery_radius_input)
+        
+        # Cancel order threshold
+        self.cancel_threshold_input = QLineEdit("15")
+        order_form.addRow("Order Cancellation Window (min):", self.cancel_threshold_input)
+        
+        # Add groups to order tab
+        order_layout.addWidget(order_group)
+        order_layout.addStretch()
+        
+        # 3. Database Backup Tab
+        backup_tab = QWidget()
+        backup_layout = QVBoxLayout(backup_tab)
+        
+        # Database backup group
+        backup_group = QGroupBox("Database Backup")
+        backup_group.setStyleSheet("QGroupBox { color: white; border: 1px solid #3498db; border-radius: 5px; margin-top: 15px; padding-top: 10px; }")
+        backup_inner_layout = QVBoxLayout(backup_group)
+        
+        backup_form = QFormLayout()
+        self.backup_path_input = QLineEdit("backups/")
+        
+        # Add browse button for backup path
+        path_layout = QHBoxLayout()
+        path_layout.addWidget(self.backup_path_input)
+        browse_btn = QPushButton("Browse")
+        browse_btn.clicked.connect(self.browse_backup_path)
+        browse_btn.setMaximumWidth(80)
+        path_layout.addWidget(browse_btn)
+        
+        backup_form.addRow("Backup Directory:", path_layout)
+        
+        self.auto_backup_checkbox = QCheckBox()
+        self.auto_backup_checkbox.setChecked(True)
+        backup_form.addRow("Enable Automatic Backups:", self.auto_backup_checkbox)
+        
+        self.backup_freq_combo = QComboBox()
+        self.backup_freq_combo.addItems(["Daily", "Weekly", "Monthly"])
+        self.backup_freq_combo.setCurrentText("Daily")
+        backup_form.addRow("Backup Frequency:", self.backup_freq_combo)
+        
+        backup_inner_layout.addLayout(backup_form)
+        
+        # Backup buttons
+        backup_buttons = QHBoxLayout()
+        backup_now_btn = QPushButton("Backup Now")
+        backup_now_btn.clicked.connect(self.backup_database)
+        restore_btn = QPushButton("Restore from Backup")
+        restore_btn.clicked.connect(self.restore_database)
+        
+        backup_buttons.addWidget(backup_now_btn)
+        backup_buttons.addWidget(restore_btn)
+        backup_inner_layout.addLayout(backup_buttons)
+        
+        # Add utility section
+        utils_group = QGroupBox("Database Utilities")
+        utils_group.setStyleSheet("QGroupBox { color: white; border: 1px solid #3498db; border-radius: 5px; margin-top: 15px; padding-top: 10px; }")
+        utils_layout = QVBoxLayout(utils_group)
+        
+        utils_buttons = QHBoxLayout()
+        optimize_btn = QPushButton("Optimize Database")
+        optimize_btn.clicked.connect(self.optimize_database)
+        clear_cache_btn = QPushButton("Clear System Cache")
+        clear_cache_btn.clicked.connect(self.clear_system_cache)
+        
+        utils_buttons.addWidget(optimize_btn)
+        utils_buttons.addWidget(clear_cache_btn)
+        utils_layout.addLayout(utils_buttons)
+        
+        # Add groups to backup tab
+        backup_layout.addWidget(backup_group)
+        backup_layout.addWidget(utils_group)
+        backup_layout.addStretch()
+        
+        # Add all tabs to tab widget
+        tabs.addTab(general_tab, "General")
+        tabs.addTab(order_tab, "Orders")
+        tabs.addTab(backup_tab, "Backup & Maintenance")
+        
+        # Add buttons at the bottom
+        button_layout = QHBoxLayout()
+        
+        save_btn = QPushButton("Save Settings")
+        save_btn.clicked.connect(self.save_settings)
+        
+        reset_btn = QPushButton("Reset to Defaults")
+        reset_btn.clicked.connect(self.reset_settings)
+        
+        button_layout.addStretch()
+        button_layout.addWidget(reset_btn)
+        button_layout.addWidget(save_btn)
+        
+        # Add all components to main layout
+        layout.addWidget(header)
+        layout.addWidget(tabs)
+        layout.addLayout(button_layout)
+        
+        # Style the page
+        page.setStyleSheet("""
+            QWidget {
+                background-color: #34495e;
+                color: white;
+            }
+            QTabWidget::pane {
+                border: 1px solid #3498db;
+                background-color: #34495e;
+                border-radius: 5px;
+            }
+            QTabBar::tab {
+                background-color: #2c3e50;
+                color: white;
+                padding: 8px 15px;
+                margin-right: 2px;
+                border-top-left-radius: 4px;
+                border-top-right-radius: 4px;
+            }
+            QTabBar::tab:selected {
+                background-color: #3498db;
+            }
+            QLineEdit, QComboBox {
+                background-color: #2c3e50;
+                color: white;
+                border: 1px solid #7f8c8d;
+                border-radius: 4px;
+                padding: 5px;
+                min-height: 25px;
+            }
+            QLineEdit:focus, QComboBox:focus {
+                border: 1px solid #3498db;
+            }
+            QCheckBox {
+                color: white;
+                spacing: 5px;
+            }
+            QCheckBox::indicator {
+                width: 15px;
+                height: 15px;
+            }
+            QPushButton {
+                background-color: #3498db;
+                color: white;
+                min-width: 120px;
+                padding: 8px 15px;
+            }
+            QPushButton:hover {
+                background-color: #2980b9;
+            }
+        """)
         
         return page
+        
+    def browse_backup_path(self):
+        """Open a file dialog to select backup directory"""
+        from PySide6.QtWidgets import QFileDialog
+        directory = QFileDialog.getExistingDirectory(
+            self, 
+            "Select Backup Directory",
+            self.backup_path_input.text()
+        )
+        if directory:
+            self.backup_path_input.setText(directory)
+    
+    def optimize_database(self):
+        """Optimize database tables"""
+        from db_utils import execute_query
+        try:
+            # Show progress dialog
+            progress_msg = QMessageBox(self)
+            progress_msg.setIcon(QMessageBox.Icon.Information)
+            progress_msg.setWindowTitle("Database Optimization")
+            progress_msg.setText("Optimizing database tables. Please wait...")
+            progress_msg.setStandardButtons(QMessageBox.StandardButton.NoButton)
+            progress_msg.show()
+            
+            # Get list of tables
+            tables = execute_query("SHOW TABLES")
+            if not tables:
+                progress_msg.close()
+                QMessageBox.critical(self, "Optimization Failed", "Could not retrieve database tables.")
+                return
+            
+            # Optimize each table
+            for table_dict in tables:
+                table_name = list(table_dict.values())[0]  # Get table name from dictionary
+                execute_query(f"OPTIMIZE TABLE {table_name}", fetch=False)
+            
+            progress_msg.close()
+            QMessageBox.information(self, "Optimization Complete", "Database tables have been optimized successfully.")
+        
+        except Exception as e:
+            if 'progress_msg' in locals():
+                progress_msg.close()
+            QMessageBox.critical(self, "Optimization Failed", f"Failed to optimize database: {str(e)}")
+    
+    def clear_system_cache(self):
+        """Clear application cache - simulated function"""
+        import shutil
+        import tempfile
+        import os
+        
+        reply = QMessageBox.question(
+            self, "Clear Cache", 
+            "This will clear all temporary files and cached data.\nDo you want to continue?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        
+        try:
+            # Create a progress message
+            progress_msg = QMessageBox(self)
+            progress_msg.setIcon(QMessageBox.Icon.Information)
+            progress_msg.setWindowTitle("Clearing Cache")
+            progress_msg.setText("Clearing system cache. Please wait...")
+            progress_msg.setStandardButtons(QMessageBox.StandardButton.NoButton)
+            progress_msg.show()
+            
+            # Clear actual system temp files (optional - be careful with this)
+            temp_dir = os.path.join(tempfile.gettempdir(), "food_delivery_cache")
+            if os.path.exists(temp_dir):
+                shutil.rmtree(temp_dir, ignore_errors=True)
+                os.makedirs(temp_dir, exist_ok=True)
+            
+            progress_msg.close()
+            QMessageBox.information(self, "Cache Cleared", "System cache has been cleared successfully.")
+        
+        except Exception as e:
+            if 'progress_msg' in locals():
+                progress_msg.close()
+            QMessageBox.critical(self, "Operation Failed", f"Failed to clear cache: {str(e)}")
+            
+    def save_settings(self):
+        """Save settings to config file or database"""
+        import json
+        import os
+        
+        settings = {
+            "app_name": self.app_name_input.text(),
+            "currency": self.currency_selector.currentText(),
+            "timezone": self.timezone_selector.currentText(),
+            "delivery_fee": self.delivery_fee_input.text(),
+            "tax_rate": self.tax_rate_input.text(),
+            "min_order": self.min_order_input.text(),
+            "service_fee": self.service_fee_input.text(),
+            "auto_assign": self.auto_assign_checkbox.isChecked(),
+            "prep_time": self.prep_time_input.text(),
+            "delivery_radius": self.delivery_radius_input.text(),
+            "cancel_threshold": self.cancel_threshold_input.text(),
+            "backup_path": self.backup_path_input.text(),
+            "auto_backup": self.auto_backup_checkbox.isChecked(),
+            "backup_frequency": self.backup_freq_combo.currentText()
+        }
+        
+        try:
+            # Create settings directory if it doesn't exist
+            os.makedirs("settings", exist_ok=True)
+            
+            # Save settings to JSON file
+            with open("settings/app_settings.json", "w") as f:
+                json.dump(settings, f, indent=4)
+            
+            QMessageBox.information(self, "Settings Saved", "Your settings have been saved successfully.")
+        except Exception as e:
+            QMessageBox.critical(self, "Settings Error", f"Failed to save settings: {str(e)}")
+    
+    def reset_settings(self):
+        reply = QMessageBox.question(
+            self, "Reset Settings", 
+            "Are you sure you want to reset all settings to default values?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        
+        if reply == QMessageBox.StandardButton.Yes:
+            # Reset all fields to defaults
+            self.app_name_input.setText("Food Delivery System")
+            self.currency_selector.setCurrentText("AED")
+            self.timezone_selector.setCurrentText("UTC+4 (UAE)")
+            
+            self.delivery_fee_input.setText("10.00")
+            self.tax_rate_input.setText("5.0")
+            self.min_order_input.setText("25.00")
+            self.service_fee_input.setText("2.0")
+            
+            self.auto_assign_checkbox.setChecked(True)
+            self.prep_time_input.setText("30")
+            self.delivery_radius_input.setText("10")
+            self.cancel_threshold_input.setText("15")
+            
+            self.backup_path_input.setText("backups/")
+            self.auto_backup_checkbox.setChecked(True)
+            self.backup_freq_combo.setCurrentText("Daily")
+            
+            QMessageBox.information(self, "Reset Complete", "All settings have been reset to default values.")
+    
+    def backup_database(self):
+        """Perform database backup using direct SQL connection with proper UI updates"""
+        from PySide6.QtWidgets import QProgressDialog
+        from PySide6.QtCore import Qt
+        import datetime
+        import os
+        from pathlib import Path
+        import time
+        
+        # Start timing the operation
+        start_time = time.time()
+        
+        # Log beginning of backup
+        print("\n==== DATABASE BACKUP STARTED ====")
+        print(f"Time: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        
+        # Create backups directory if it doesn't exist
+        backup_dir = Path(self.backup_path_input.text().strip())
+        try:
+            os.makedirs(backup_dir, exist_ok=True)
+            print(f"Backup directory created/verified: {backup_dir}")
+        except Exception as e:
+            error_msg = f"Could not create backup directory: {str(e)}"
+            print(f"ERROR: {error_msg}")
+            QMessageBox.critical(self, "Backup Failed", error_msg)
+            return
+        
+        # Generate timestamp
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        backup_file = backup_dir / f"food_delivery_backup_{timestamp}.sql"
+        print(f"Backup will be saved to: {backup_file}")
+        
+        # Get database connection details from environment
+        db_host = os.environ.get('DB_HOST', 'localhost')
+        db_user = os.environ.get('DB_USER', 'root')
+        db_password = os.environ.get('DB_PASSWORD', '')
+        db_name = os.environ.get('DB_NAME', 'food_delivery')
+        print(f"Database connection details: host={db_host}, user={db_user}, database={db_name}")
+        
+        # Use direct SQL queries for backup (no mysqldump required)
+        from db_utils import get_db_connection
+        
+        # First, get table count to set up progress dialog
+        try:
+            print("Attempting to connect to database...")
+            connection = get_db_connection()
+            if not connection:
+                error_msg = "Could not connect to database for backup."
+                print(f"ERROR: {error_msg}")
+                QMessageBox.critical(self, "Backup Failed", error_msg)
+                return
+            
+            print("Successfully connected to database")
+            cursor = connection.cursor(dictionary=True)
+            
+            print("Getting list of tables...")
+            cursor.execute("SHOW TABLES")
+            tables = [list(table.values())[0] for table in cursor.fetchall()]
+            table_count = len(tables)
+            print(f"Found {table_count} tables to backup: {', '.join(tables)}")
+            
+            # Create progress dialog
+            progress = QProgressDialog("Preparing to backup database...", "Cancel", 0, table_count, self)
+            progress.setWindowTitle("Database Backup")
+            progress.setWindowModality(Qt.WindowModality.WindowModal)
+            progress.setMinimumDuration(0)  # Show immediately
+            progress.setValue(0)
+            
+            print("Starting backup process...")
+            # Open backup file
+            with open(backup_file, 'w') as f:
+                # Write header
+                f.write(f"-- Food Delivery System Database Backup\n")
+                f.write(f"-- Date: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+                f.write(f"-- Database: {db_name}\n\n")
+                print("Wrote backup file header")
+                
+                # Process each table
+                for i, table in enumerate(tables):
+                    # Update progress dialog
+                    progress.setValue(i)
+                    progress.setLabelText(f"Backing up table: {table} ({i+1}/{table_count})")
+                    
+                    # Check if user canceled
+                    if progress.wasCanceled():
+                        print("Backup cancelled by user")
+                        cursor.close()
+                        connection.close()
+                        # Remove incomplete file
+                        if os.path.exists(backup_file):
+                            os.remove(backup_file)
+                            print(f"Removed incomplete backup file: {backup_file}")
+                        return
+                    
+                    # Allow UI to update
+                    QApplication.processEvents()
+                    
+                    # Get table structure
+                    try:
+                        print(f"Backing up table structure for '{table}'...")
+                        cursor.execute(f"SHOW CREATE TABLE `{table}`")
+                        create_table_sql = cursor.fetchone()['Create Table']
+                        
+                        # Write create table statement
+                        f.write(f"DROP TABLE IF EXISTS `{table}`;\n")
+                        f.write(f"{create_table_sql};\n\n")
+                        
+                        # Get table data
+                        print(f"Fetching data for table '{table}'...")
+                        cursor.execute(f"SELECT * FROM `{table}`")
+                        rows = cursor.fetchall()
+                        print(f"Found {len(rows)} rows in table '{table}'")
+                        
+                        # If table has data, write INSERT statements
+                        if rows:
+                            columns = list(rows[0].keys())
+                            print(f"Table '{table}' columns: {', '.join(columns)}")
+                            
+                            # Process in batches to avoid memory issues
+                            batch_size = 100
+                            total_rows = len(rows)
+                            total_batches = (total_rows + batch_size - 1) // batch_size  # Ceiling division
+                            
+                            print(f"Processing {total_rows} rows in {total_batches} batches (size {batch_size})...")
+                            for batch_start in range(0, total_rows, batch_size):
+                                batch_num = batch_start // batch_size + 1
+                                
+                                # Update progress text for large tables
+                                if total_rows > 1000:
+                                    progress.setLabelText(f"Backing up table: {table} - Rows {batch_start}/{total_rows}")
+                                    QApplication.processEvents()
+                                
+                                # Check for cancellation on each batch
+                                if progress.wasCanceled():
+                                    print("Backup cancelled by user during data processing")
+                                    cursor.close()
+                                    connection.close()
+                                    if os.path.exists(backup_file):
+                                        os.remove(backup_file)
+                                        print(f"Removed incomplete backup file: {backup_file}")
+                                    return
+                                
+                                # Process batch
+                                batch = rows[batch_start:batch_start + batch_size]
+                                print(f"Processing batch {batch_num}/{total_batches} ({len(batch)} rows)")
+                                
+                                # Generate VALUES part
+                                values_list = []
+                                for row in batch:
+                                    row_values = []
+                                    for column in columns:
+                                        if row[column] is None:
+                                            row_values.append("NULL")
+                                        elif isinstance(row[column], (int, float)):
+                                            row_values.append(str(row[column]))
+                                        elif isinstance(row[column], bytes):
+                                            # Handle binary data
+                                            hex_str = row[column].hex()
+                                            row_values.append(f"0x{hex_str}")
+                                        else:
+                                            # Escape string values
+                                            val = str(row[column]).replace("'", "''")
+                                            row_values.append(f"'{val}'")
+                                    values_list.append(f"({', '.join(row_values)})")
+                                
+                                # Write insert statement with multiple rows
+                                f.write(f"INSERT INTO `{table}` (`{'`, `'.join(columns)}`) VALUES\n")
+                                f.write(",\n".join(values_list))
+                                f.write(";\n\n")
+                                print(f"Wrote {len(batch)} rows in batch {batch_num}")
+                        else:
+                            print(f"Table '{table}' is empty - no data to backup")
+                    
+                    except Exception as table_error:
+                        print(f"ERROR processing table '{table}': {str(table_error)}")
+                        progress.close()
+                        cursor.close()
+                        connection.close()
+                        if os.path.exists(backup_file):
+                            os.remove(backup_file)
+                            print(f"Removed incomplete backup file: {backup_file}")
+                        QMessageBox.critical(self, "Backup Failed", f"Error while backing up table '{table}': {str(table_error)}")
+                        return
+                
+                # Completed successfully
+                progress.setValue(table_count)
+                print("Backup completed successfully")
+            
+            # Close database connection
+            cursor.close()
+            connection.close()
+            print("Database connection closed")
+            
+            # Check file size
+            backup_size = os.path.getsize(backup_file)
+            print(f"Backup file size: {backup_size/1024/1024:.2f} MB")
+            
+            # Success message
+            end_time = time.time()
+            duration = end_time - start_time
+            print(f"Backup took {duration:.2f} seconds")
+            print("==== DATABASE BACKUP COMPLETED ====\n")
+            
+            QMessageBox.information(
+                self, 
+                "Backup Complete", 
+                f"Database backup completed successfully.\nBackup stored at: {backup_file}\nFile size: {backup_size/1024/1024:.2f} MB\nTime: {duration:.2f} seconds"
+            )
+            
+        except Exception as e:
+            # Handle any uncaught exceptions
+            print(f"CRITICAL ERROR during backup: {str(e)}")
+            if 'progress' in locals():
+                progress.close()
+            if 'cursor' in locals() and cursor:
+                cursor.close()
+            if 'connection' in locals() and connection and connection.is_connected():
+                connection.close()
+                print("Database connection closed after error")
+            
+            # Remove failed backup
+            if os.path.exists(backup_file):
+                try:
+                    os.remove(backup_file)
+                    print(f"Removed incomplete backup file: {backup_file}")
+                except Exception as rm_err:
+                    print(f"Warning: Could not remove incomplete backup file: {str(rm_err)}")
+            
+            print("==== DATABASE BACKUP FAILED ====\n")
+            QMessageBox.critical(self, "Backup Failed", f"Failed to perform database backup: {str(e)}")
+    
+    def restore_database(self):
+        """Restore database from a backup file using direct SQL connection"""
+        from PySide6.QtWidgets import QFileDialog, QProgressDialog
+        from PySide6.QtCore import Qt, QProcess
+        import os
+        import re
+        import time
+        import datetime
+        import sys
+        
+        # Start timing the operation
+        start_time = time.time()
+        
+        # Log beginning of restore
+        print("\n==== DATABASE RESTORE STARTED ====")
+        print(f"Time: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        
+        reply = QMessageBox.warning(
+            self, "Restore Database", 
+            "WARNING: Restoring from backup will overwrite the current database. This action cannot be undone.\n\nDo you want to continue?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        
+        if reply != QMessageBox.StandardButton.Yes:
+            print("Restore cancelled by user at confirmation dialog")
+            return
+        
+        # Let user select the backup file
+        backup_file, _ = QFileDialog.getOpenFileName(
+            self,
+            "Select Backup File",
+            str(self.backup_path_input.text()),
+            "SQL Files (*.sql)"
+        )
+        
+        if not backup_file:
+            print("Restore cancelled - no file selected")
+            return  # User canceled
+        
+        print(f"Selected backup file: {backup_file}")
+        
+        # Check file size
+        try:
+            file_size = os.path.getsize(backup_file)
+            print(f"Backup file size: {file_size/1024/1024:.2f} MB")
+        except Exception as e:
+            print(f"Warning: Could not determine file size: {str(e)}")
+        
+        # Use direct SQL connection instead of mysql client
+        from db_utils import get_db_connection
+        
+        # Read SQL file first to count statements
+        try:
+            print("Reading backup file...")
+            with open(backup_file, 'r') as f:
+                sql_file = f.read()
+                
+            # Split file content into individual statements
+            print("Splitting SQL file into statements...")
+            statements = re.split(r';\s*\n', sql_file)
+            total_statements = len([s for s in statements if s.strip()])
+            print(f"Found {total_statements} SQL statements to execute")
+            
+            # Create progress dialog
+            progress = QProgressDialog("Preparing to restore database...", "Cancel", 0, total_statements, self)
+            progress.setWindowTitle("Database Restore")
+            progress.setWindowModality(Qt.WindowModality.WindowModal)
+            progress.setMinimumDuration(0)  # Show immediately
+            progress.setValue(0)
+            
+            print("Attempting to connect to database...")
+            connection = get_db_connection()
+            if not connection:
+                print("ERROR: Could not connect to database for restore")
+                QMessageBox.critical(self, "Restore Failed", "Could not connect to database for restore.")
+                return
+            
+            print("Successfully connected to database")
+            cursor = connection.cursor()
+            
+            # Turn off foreign key checks temporarily
+            print("Disabling foreign key checks...")
+            cursor.execute("SET FOREIGN_KEY_CHECKS=0;")
+            
+            executed = 0
+            skipped = 0
+            
+            # Execute each statement
+            for i, statement in enumerate(statements):
+                if statement.strip():  # Skip empty statements
+                    progress.setValue(executed)
+                    progress.setLabelText(f"Restoring database: {executed}/{total_statements}")
+                    
+                    # Check for user cancellation
+                    if progress.wasCanceled():
+                        print("Restore cancelled by user during execution")
+                        cursor.execute("SET FOREIGN_KEY_CHECKS=1;")  # Re-enable foreign key checks
+                        cursor.close()
+                        connection.close()
+                        print("Database connection closed after cancellation")
+                        return
+                    
+                    # Allow UI to update
+                    QApplication.processEvents()
+                    
+                    # Execute the statement
+                    try:
+                        print(f"Executing statement {executed+1}/{total_statements} ({len(statement)} characters)...")
+                        if len(statement) > 100:
+                            print(f"Statement preview: {statement[:97]}...")
+                        else:
+                            print(f"Statement: {statement}")
+                            
+                        cursor.execute(statement)
+                        connection.commit()
+                        executed += 1
+                        print(f"Statement {executed}/{total_statements} executed successfully")
+                    except Exception as stmt_error:
+                        print(f"ERROR executing statement: {str(stmt_error)}")
+                        if len(statement) > 100:
+                            print(f"Failed statement preview: {statement[:97]}...")
+                        else:
+                            print(f"Failed statement: {statement}")
+                        skipped += 1
+                        # Continue with next statement
+            
+            # Turn foreign key checks back on
+            print("Re-enabling foreign key checks...")
+            cursor.execute("SET FOREIGN_KEY_CHECKS=1;")
+            
+            cursor.close()
+            connection.close()
+            print("Database connection closed")
+            
+            progress.setValue(total_statements)
+            
+            # Success message
+            end_time = time.time()
+            duration = end_time - start_time
+            print(f"Restore completed in {duration:.2f} seconds")
+            print(f"Statements: {executed} executed, {skipped} skipped")
+            print("==== DATABASE RESTORE COMPLETED ====\n")
+            
+            # Prepare restart message
+            success_msg = (
+                f"Database restore completed successfully.\n\n"
+                f"Statements: {executed} executed, {skipped} skipped\n"
+                f"Time: {duration:.2f} seconds\n\n"
+                "The application will now restart to apply the changes."
+            )
+            
+            # Show completion message
+            restart_msg = QMessageBox(self)
+            restart_msg.setIcon(QMessageBox.Icon.Information)
+            restart_msg.setWindowTitle("Restore Complete")
+            restart_msg.setText(success_msg)
+            restart_msg.setStandardButtons(QMessageBox.StandardButton.Ok)
+            restart_msg.buttonClicked.connect(self.restart_application)
+            restart_msg.exec()
+            
+        except Exception as e:
+            print(f"CRITICAL ERROR during restore: {str(e)}")
+            if 'progress' in locals():
+                progress.close()
+            if 'cursor' in locals() and cursor:
+                cursor.close()
+            if 'connection' in locals() and connection and connection.is_connected():
+                connection.close()
+                print("Database connection closed after error")
+            
+            print("==== DATABASE RESTORE FAILED ====\n")
+            QMessageBox.critical(self, "Restore Failed", f"Failed to restore database: {str(e)}")
+            
+    def restart_application(self):
+        """Show a message instructing the user to manually restart the application"""
+        print("Application requires manual restart after database restore.")
+        
+        # Create a detailed message for the user
+        restart_message = QMessageBox(self)
+        restart_message.setIcon(QMessageBox.Icon.Information)
+        restart_message.setWindowTitle("Manual Restart Required")
+        restart_message.setText(
+            "Database has been restored successfully!\n\n"
+            "Please close the application completely and restart it manually "
+            "for the changes to take effect.\n\n"
+            "Click OK to close the application."
+        )
+        restart_message.setStandardButtons(QMessageBox.StandardButton.Ok)
+        
+        # When user clicks OK, just close the application
+        result = restart_message.exec()
+        if result == QMessageBox.StandardButton.Ok:
+            print("User acknowledged. Closing application...")
+            # Signal logout to cleanup resources
+            self.logout_requested.emit()
+            # Close the main window
+            QApplication.quit()
+            print("Application closed.")
     
     def show_dashboard(self):
         self.content_area.setCurrentWidget(self.dashboard_page)
