@@ -248,25 +248,108 @@ class CustomerDashboard(QWidget):
             }
             #nav-button {
                 text-align: left;
-                padding: 12px;
-                border-radius: 5px;
-                background-color: transparent;
+                background-color: #34495e;
+                border-radius: 4px;
                 color: white;
                 font-size: 14px;
+                padding: 12px;
+                margin: 5px 0;
             }
             #nav-button:hover {
-                background-color: #34495e;
+                background-color: #3498db;
             }
             #logout-button {
                 background-color: #e74c3c;
                 color: white;
-                padding: 10px;
-                border-radius: 5px;
-                font-weight: bold;
+                border-radius: 4px;
+                padding: 12px;
             }
             #logout-button:hover {
                 background-color: #c0392b;
             }
+            
+            /* Restaurant and favorite cards */
+            #restaurant-card {
+                background-color: white;
+                border-radius: 8px;
+                padding: 15px;
+                box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+                margin: 10px;
+                border: 1px solid #e0e0e0;
+            }
+            #restaurant-card:hover {
+                border: 1px solid #3498db;
+            }
+            .restaurant-name {
+                color: #2c3e50;
+                font-size: 18px;
+                font-weight: bold;
+                margin-bottom: 5px;
+            }
+            .restaurant-cuisine, .restaurant-rating {
+                color: #7f8c8d;
+                margin-bottom: 10px;
+            }
+            .restaurant-rating {
+                color: #f39c12;
+                font-weight: bold;
+            }
+            #action-button {
+                background-color: #3498db;
+                color: white;
+                border-radius: 4px;
+                padding: 8px 12px;
+                font-weight: bold;
+            }
+            #action-button:hover {
+                background-color: #2980b9;
+            }
+            
+            /* Favorite buttons */
+            #add-favorite-button {
+                background-color: #ffffff;
+                color: #e74c3c;
+                border: 1px solid #e74c3c;
+                border-radius: 4px;
+                padding: 8px 12px;
+                font-weight: bold;
+            }
+            #add-favorite-button:hover {
+                background-color: #e74c3c;
+                color: white;
+            }
+            #favorite-button {
+                background-color: #e74c3c;
+                color: white;
+                border-radius: 4px;
+                padding: 8px 12px;
+                font-weight: bold;
+            }
+            #unfavorite-button {
+                background-color: #e74c3c;
+                color: white;
+                border-radius: 4px;
+                padding: 8px 12px;
+                font-weight: bold;
+            }
+            #unfavorite-button:hover {
+                background-color: #c0392b;
+            }
+            
+            /* Refresh button */
+            #refresh-button {
+                background-color: #2ecc71;
+                color: white;
+                border-radius: 4px;
+                padding: 8px 15px;
+                font-weight: bold;
+                margin-bottom: 10px;
+            }
+            #refresh-button:hover {
+                background-color: #27ae60;
+            }
+            
+            /* Table Styles */
             QTableWidget {
                 background-color: white;
                 alternate-background-color: #f5f5f5;
@@ -280,41 +363,8 @@ class CustomerDashboard(QWidget):
                 border: none;
                 font-weight: bold;
             }
-            QPushButton#action-button {
-                background-color: #3498db;
-                color: white;
-                border-radius: 4px;
-                padding: 8px 15px;
-                font-weight: bold;
-            }
-            QPushButton#action-button:hover {
-                background-color: #2980b9;
-            }
-            .restaurant-card {
-                background-color: white;
-                border-radius: 8px;
-                padding: 15px;
-                margin: 10px;
-                border: 1px solid #e0e0e0;
-            }
-            .restaurant-card:hover {
-                border: 1px solid #3498db;
-                box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-            }
-            .restaurant-name {
-                font-weight: bold;
-                font-size: 18px;
-                color: #2c3e50;
-            }
-            .restaurant-cuisine {
-                color: #7f8c8d;
-                font-size: 14px;
-            }
-            .restaurant-rating {
-                color: #f39c12;
-                font-weight: bold;
-            }
-            /* Search Dialog Styles */
+            
+            /* Dialog Styles */
             QDialog {
                 background-color: white;
             }
@@ -343,6 +393,7 @@ class CustomerDashboard(QWidget):
             QPushButton:hover {
                 background-color: #2980b9;
             }
+            
             /* Menu Item Card Styles */
             .menu-item-card {
                 background-color: white;
@@ -380,6 +431,7 @@ class CustomerDashboard(QWidget):
             #add-to-cart-btn:hover {
                 background-color: #219a52;
             }
+            
             /* Order Card Styles */
             .order-card {
                 background-color: white;
@@ -534,12 +586,23 @@ class CustomerDashboard(QWidget):
         header.setAlignment(Qt.AlignmentFlag.AlignLeft)
         header.setFont(QFont("Arial", 24))
         
-        # Placeholder content
-        placeholder = QLabel("Your favorite restaurants will appear here")
-        placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        # Add scroll area for favorites
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_content = QWidget()
+        self.favorites_grid = QGridLayout(scroll_content)
+        self.favorites_grid.setAlignment(Qt.AlignmentFlag.AlignTop)
+        self.favorites_grid.setSpacing(20)
+        scroll_area.setWidget(scroll_content)
+        
+        # Refresh button
+        refresh_btn = QPushButton("Refresh")
+        refresh_btn.setObjectName("refresh-button")
+        refresh_btn.clicked.connect(self.load_favorites)
         
         layout.addWidget(header)
-        layout.addWidget(placeholder)
+        layout.addWidget(refresh_btn)
+        layout.addWidget(scroll_area)
         
         return page
     
@@ -659,6 +722,18 @@ class CustomerDashboard(QWidget):
             self.restaurants_grid.addWidget(empty_label, 0, 0)
             return
         
+        # Get customer's favorite restaurants for comparison
+        favorite_restaurant_ids = []
+        if self.customer_id:
+            favorites_query = """
+                SELECT restaurant_id
+                FROM favorites
+                WHERE customer_id = %s
+            """
+            favorites = execute_query(favorites_query, (self.customer_id,))
+            if favorites:
+                favorite_restaurant_ids = [f['restaurant_id'] for f in favorites]
+        
         # Create restaurant cards
         row, col = 0, 0
         max_cols = 2
@@ -671,6 +746,7 @@ class CustomerDashboard(QWidget):
             
             name_label = QLabel(restaurant['name'])
             name_label.setProperty("class", "restaurant-name")
+            name_label.setFont(QFont("Arial", 14, QFont.Weight.Bold))
             
             cuisine_label = QLabel(f"Cuisine: {restaurant['cuisine_type']}")
             cuisine_label.setProperty("class", "restaurant-cuisine")
@@ -678,14 +754,33 @@ class CustomerDashboard(QWidget):
             rating_label = QLabel(f"Rating: {restaurant['rating']:.1f}★")
             rating_label.setProperty("class", "restaurant-rating")
             
+            # Button container
+            btn_container = QHBoxLayout()
+            
             view_button = QPushButton("View Menu")
             view_button.setObjectName("action-button")
             view_button.clicked.connect(lambda _, id=restaurant['restaurant_id']: self.view_restaurant(id))
             
+            # Check if restaurant is already in favorites
+            is_favorite = restaurant['restaurant_id'] in favorite_restaurant_ids
+            favorite_button = QPushButton("♥ Favorited" if is_favorite else "♡ Add to Favorites")
+            favorite_button.setObjectName("favorite-button" if is_favorite else "add-favorite-button")
+            
+            # Set button properties
+            if is_favorite:
+                favorite_button.setEnabled(False)  # Disable if already a favorite
+            else:
+                favorite_button.clicked.connect(
+                    lambda _, id=restaurant['restaurant_id']: self.add_to_favorites(id)
+                )
+            
+            btn_container.addWidget(view_button)
+            btn_container.addWidget(favorite_button)
+            
             card_layout.addWidget(name_label)
             card_layout.addWidget(cuisine_label)
             card_layout.addWidget(rating_label)
-            card_layout.addWidget(view_button)
+            card_layout.addLayout(btn_container)
             
             self.restaurants_grid.addWidget(card, row, col)
             
@@ -810,6 +905,7 @@ class CustomerDashboard(QWidget):
     
     def favorites(self):
         self.content_area.setCurrentWidget(self.favorites_page)
+        self.load_favorites()  # Load favorites when switching to the page
     
     def profile(self):
         self.content_area.setCurrentWidget(self.profile_page)
@@ -1614,5 +1710,138 @@ class CustomerDashboard(QWidget):
             if col > 2:  # 3 columns
                 col = 0
                 row += 1
+
+    def load_favorites(self):
+        """Load favorite restaurants from database"""
+        # Clear existing favorites
+        while self.favorites_grid.count():
+            item = self.favorites_grid.takeAt(0)
+            widget = item.widget()
+            if widget:
+                widget.deleteLater()
+        
+        # Get customer ID
+        if not self.customer_id:
+            customer = execute_query("SELECT customer_id FROM customers WHERE user_id = %s", (self.user.user_id,))
+            if customer:
+                self.customer_id = customer[0]['customer_id']
+            else:
+                # No customer profile yet
+                placeholder = QLabel("Please complete your profile first to use favorites")
+                placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                self.favorites_grid.addWidget(placeholder, 0, 0)
+                return
+        
+        # Get favorites from database
+        favorites_query = """
+            SELECT r.*, f.favorite_id
+            FROM favorites f
+            JOIN restaurants r ON f.restaurant_id = r.restaurant_id
+            WHERE f.customer_id = %s
+            ORDER BY r.name ASC
+        """
+        favorites = execute_query(favorites_query, (self.customer_id,))
+        
+        if not favorites:
+            placeholder = QLabel("You don't have any favorite restaurants yet")
+            placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.favorites_grid.addWidget(placeholder, 0, 0)
+            return
+        
+        # Create restaurant cards
+        row, col = 0, 0
+        max_cols = 2
+        
+        for restaurant in favorites:
+            card = QFrame()
+            card.setObjectName("restaurant-card")
+            card.setProperty("class", "favorite-card")
+            card_layout = QVBoxLayout(card)
+            
+            name_label = QLabel(restaurant['name'])
+            name_label.setProperty("class", "restaurant-name")
+            name_label.setFont(QFont("Arial", 14, QFont.Weight.Bold))
+            
+            cuisine_label = QLabel(f"Cuisine: {restaurant['cuisine_type']}")
+            cuisine_label.setProperty("class", "restaurant-cuisine")
+            
+            rating_label = QLabel(f"Rating: {restaurant['rating']:.1f}★")
+            rating_label.setProperty("class", "restaurant-rating")
+            
+            # Button container for view and unfavorite
+            btn_container = QHBoxLayout()
+            
+            view_button = QPushButton("View Menu")
+            view_button.setObjectName("action-button")
+            view_button.clicked.connect(lambda _, id=restaurant['restaurant_id']: self.view_restaurant(id))
+            
+            unfavorite_button = QPushButton("♥ Remove")
+            unfavorite_button.setObjectName("unfavorite-button")
+            unfavorite_button.clicked.connect(lambda _, fav_id=restaurant['favorite_id']: self.remove_favorite(fav_id))
+            
+            btn_container.addWidget(view_button)
+            btn_container.addWidget(unfavorite_button)
+            
+            card_layout.addWidget(name_label)
+            card_layout.addWidget(cuisine_label)
+            card_layout.addWidget(rating_label)
+            card_layout.addLayout(btn_container)
+            
+            self.favorites_grid.addWidget(card, row, col)
+            
+            col += 1
+            if col >= max_cols:
+                col = 0
+                row += 1
+    
+    def add_to_favorites(self, restaurant_id):
+        """Add a restaurant to favorites"""
+        if not self.customer_id:
+            customer = execute_query("SELECT customer_id FROM customers WHERE user_id = %s", (self.user.user_id,))
+            if customer:
+                self.customer_id = customer[0]['customer_id']
+            else:
+                QMessageBox.warning(self, "Profile Incomplete", 
+                                   "Please complete your profile first to add favorites.")
+                self.profile()
+                return
+        
+        # Check if already in favorites
+        check_query = "SELECT * FROM favorites WHERE customer_id = %s AND restaurant_id = %s"
+        existing = execute_query(check_query, (self.customer_id, restaurant_id))
+        
+        if existing:
+            QMessageBox.information(self, "Already Favorited", 
+                                   "This restaurant is already in your favorites.")
+            return
+        
+        # Add to favorites
+        insert_query = "INSERT INTO favorites (customer_id, restaurant_id) VALUES (%s, %s)"
+        result = execute_query(insert_query, (self.customer_id, restaurant_id), fetch=False)
+        
+        if result:
+            QMessageBox.information(self, "Added to Favorites", 
+                                   "Restaurant has been added to your favorites.")
+        else:
+            QMessageBox.warning(self, "Error", 
+                               "Could not add restaurant to favorites. Please try again.")
+    
+    def remove_favorite(self, favorite_id):
+        """Remove a restaurant from favorites"""
+        reply = QMessageBox.question(
+            self, "Remove from Favorites", 
+            "Are you sure you want to remove this restaurant from your favorites?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        
+        if reply == QMessageBox.StandardButton.Yes:
+            delete_query = "DELETE FROM favorites WHERE favorite_id = %s"
+            result = execute_query(delete_query, (favorite_id,), fetch=False)
+            
+            if result is not None:
+                self.load_favorites()  # Refresh the favorites page
+            else:
+                QMessageBox.warning(self, "Error", 
+                                   "Could not remove restaurant from favorites. Please try again.")
 
 # ... rest of file unchanged ... 
