@@ -2,7 +2,7 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QPushButton,
                              QHBoxLayout, QScrollArea, QFrame, QGridLayout, 
                              QSizePolicy, QSpacerItem, QStackedWidget, QMessageBox,
                              QTableWidget, QTableWidgetItem, QDialog, QFormLayout,
-                             QLineEdit, QComboBox, QHeaderView)
+                             QLineEdit, QComboBox, QHeaderView, QSlider, QGroupBox, QTextEdit)
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFont, QIcon, QPixmap
 import os
@@ -1285,9 +1285,13 @@ class CustomerDashboard(QWidget):
         """Show a dialog with order details"""
         # Get order details
         order = execute_query("""
-            SELECT o.*, r.name as restaurant_name
+            SELECT o.*, r.name as restaurant_name, r.restaurant_id, c.customer_id,
+                   dp.delivery_person_id, dp.name as delivery_person_name,
+                   (SELECT COUNT(*) FROM ratings WHERE order_id = o.order_id) as has_rating
             FROM orders o
             JOIN restaurants r ON o.restaurant_id = r.restaurant_id
+            JOIN customers c ON o.customer_id = c.customer_id
+            LEFT JOIN delivery_personnel dp ON o.delivery_person_id = dp.delivery_person_id
             WHERE o.order_id = %s
         """, (order_id,))[0]
         
@@ -1319,10 +1323,17 @@ class CustomerDashboard(QWidget):
         order_status = QLabel(order['delivery_status'])
         payment_method = QLabel(order['payment_method'])
         
+        # Set delivery person name if available
+        delivery_person_text = "Not assigned"
+        if order.get('delivery_person_name'):
+            delivery_person_text = order['delivery_person_name']
+        delivery_person = QLabel(delivery_person_text)
+        
         info_layout.addRow("Restaurant:", restaurant_name)
         info_layout.addRow("Order Date:", order_date)
         info_layout.addRow("Status:", order_status)
         info_layout.addRow("Payment Method:", payment_method)
+        info_layout.addRow("Delivery Person:", delivery_person)
         
         # Order items
         items_label = QLabel("Order Items")
@@ -1365,9 +1376,21 @@ class CustomerDashboard(QWidget):
         total_layout.addStretch()
         total_layout.addWidget(total_amount)
         
+        # Buttons layout
+        buttons_layout = QHBoxLayout()
+        
         # Close button
         close_btn = QPushButton("Close")
         close_btn.clicked.connect(dialog.accept)
+        buttons_layout.addWidget(close_btn)
+        
+        # Add Rate Order button for completed orders that haven't been rated
+        if order['delivery_status'] == 'Delivered' and not order['has_rating']:
+            rate_btn = QPushButton("Rate Order")
+            rate_btn.setObjectName("action-button")
+            rate_btn.clicked.connect(lambda: self.show_rating_dialog(order_id, order['restaurant_id'], 
+                                                                    order['customer_id'], order['delivery_person_id']))
+            buttons_layout.addWidget(rate_btn)
         
         # Add all to layout
         layout.addWidget(header_label)
@@ -1375,7 +1398,7 @@ class CustomerDashboard(QWidget):
         layout.addWidget(items_label)
         layout.addWidget(items_table)
         layout.addLayout(total_layout)
-        layout.addWidget(close_btn)
+        layout.addLayout(buttons_layout)
         
         dialog.setStyleSheet("""
             #order-card {
@@ -1401,10 +1424,232 @@ class CustomerDashboard(QWidget):
                 font-size: 16px;
                 margin: 5px 0;
             }
+            #action-button {
+                background-color: #3498db;
+                color: white;
+                padding: 8px 16px;
+                border-radius: 4px;
+            }
+            #action-button:hover {
+                background-color: #2980b9;
+            }
         """)
         
         # Show dialog
         dialog.exec()
+
+    def show_rating_dialog(self, order_id, restaurant_id, customer_id, delivery_person_id):
+        """Show dialog to rate food and delivery"""
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Rate Your Order")
+        dialog.setFixedWidth(400)
+        
+        layout = QVBoxLayout(dialog)
+        
+        # Header
+        header = QLabel("Please Rate Your Experience")
+        header.setFont(QFont("Arial", 16, QFont.Weight.Bold))
+        header.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        
+        # Food Rating
+        food_group = QGroupBox("Food Quality")
+        food_layout = QVBoxLayout(food_group)
+        
+        food_label = QLabel("How would you rate the food?")
+        
+        food_rating_layout = QHBoxLayout()
+        food_rating = QSlider(Qt.Orientation.Horizontal)
+        food_rating.setRange(1, 5)
+        food_rating.setValue(5)  # Default value
+        food_rating.setTickPosition(QSlider.TickPosition.TicksBelow)
+        food_rating.setTickInterval(1)
+        
+        food_value_label = QLabel("5 ★")
+        food_value_label.setFixedWidth(30)
+        
+        # Update label when slider value changes
+        food_rating.valueChanged.connect(lambda value: food_value_label.setText(f"{value} ★"))
+        
+        food_rating_layout.addWidget(food_rating)
+        food_rating_layout.addWidget(food_value_label)
+        
+        food_layout.addWidget(food_label)
+        food_layout.addLayout(food_rating_layout)
+        
+        # Delivery Rating
+        delivery_group = QGroupBox("Delivery Service")
+        delivery_layout = QVBoxLayout(delivery_group)
+        
+        delivery_label = QLabel("How would you rate the delivery service?")
+        
+        delivery_rating_layout = QHBoxLayout()
+        delivery_rating = QSlider(Qt.Orientation.Horizontal)
+        delivery_rating.setRange(1, 5)
+        delivery_rating.setValue(5)  # Default value
+        delivery_rating.setTickPosition(QSlider.TickPosition.TicksBelow)
+        delivery_rating.setTickInterval(1)
+        
+        delivery_value_label = QLabel("5 ★")
+        delivery_value_label.setFixedWidth(30)
+        
+        # Update label when slider value changes
+        delivery_rating.valueChanged.connect(lambda value: delivery_value_label.setText(f"{value} ★"))
+        
+        delivery_rating_layout.addWidget(delivery_rating)
+        delivery_rating_layout.addWidget(delivery_value_label)
+        
+        delivery_layout.addWidget(delivery_label)
+        delivery_layout.addLayout(delivery_rating_layout)
+        
+        # Comment
+        comment_group = QGroupBox("Additional Comments")
+        comment_layout = QVBoxLayout(comment_group)
+        
+        comment_edit = QTextEdit()
+        comment_edit.setPlaceholderText("Share your feedback about the food and delivery (optional)")
+        comment_edit.setFixedHeight(80)
+        
+        comment_layout.addWidget(comment_edit)
+        
+        # Buttons
+        buttons_layout = QHBoxLayout()
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.clicked.connect(dialog.reject)
+        
+        submit_btn = QPushButton("Submit Rating")
+        submit_btn.setObjectName("submit-button")
+        submit_btn.clicked.connect(lambda: self.submit_rating(
+            dialog,
+            order_id,
+            restaurant_id,
+            customer_id,
+            delivery_person_id,
+            food_rating.value(),
+            delivery_rating.value(),
+            comment_edit.toPlainText()
+        ))
+        
+        buttons_layout.addWidget(cancel_btn)
+        buttons_layout.addWidget(submit_btn)
+        
+        # Add all to layout
+        layout.addWidget(header)
+        layout.addWidget(food_group)
+        layout.addWidget(delivery_group)
+        layout.addWidget(comment_group)
+        layout.addLayout(buttons_layout)
+        
+        dialog.setStyleSheet("""
+            QDialog {
+                background-color: white;
+            }
+            QGroupBox {
+                font-weight: bold;
+                border: 1px solid #ddd;
+                border-radius: 4px;
+                margin-top: 1.5em;
+                padding-top: 10px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0 5px;
+            }
+            QSlider::groove:horizontal {
+                border: 1px solid #bbb;
+                background: white;
+                height: 10px;
+                border-radius: 4px;
+            }
+            QSlider::sub-page:horizontal {
+                background: #3498db;
+                border: 1px solid #777;
+                height: 10px;
+                border-radius: 4px;
+            }
+            QSlider::handle:horizontal {
+                background: #f39c12;
+                border: 1px solid #777;
+                width: 18px;
+                margin-top: -5px;
+                margin-bottom: -5px;
+                border-radius: 9px;
+            }
+            #submit-button {
+                background-color: #2ecc71;
+                color: white;
+                padding: 8px 16px;
+                border-radius: 4px;
+            }
+            #submit-button:hover {
+                background-color: #27ae60;
+            }
+        """)
+        
+        dialog.exec()
+
+    def submit_rating(self, dialog, order_id, restaurant_id, customer_id, delivery_person_id, 
+                     food_rating, delivery_rating, comment):
+        """Submit rating to database"""
+        try:
+            # Insert rating into database
+            query = """
+            INSERT INTO ratings (customer_id, order_id, restaurant_id, delivery_person_id, 
+                               food_rating, delivery_rating, comment, rating_date)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, NOW())
+            """
+            result = execute_query(query, (
+                customer_id, 
+                order_id, 
+                restaurant_id, 
+                delivery_person_id, 
+                food_rating, 
+                delivery_rating, 
+                comment
+            ), fetch=False)
+            
+            # Update order as rated
+            update_query = """
+            UPDATE orders SET is_rated = TRUE WHERE order_id = %s
+            """
+            execute_query(update_query, (order_id,), fetch=False)
+            
+            # Update restaurant rating average
+            restaurant_update = """
+            UPDATE restaurants r
+            SET rating = (
+                SELECT AVG(food_rating) 
+                FROM ratings 
+                WHERE restaurant_id = %s
+            )
+            WHERE restaurant_id = %s
+            """
+            execute_query(restaurant_update, (restaurant_id, restaurant_id), fetch=False)
+            
+            # Update delivery person rating average
+            if delivery_person_id:
+                delivery_update = """
+                UPDATE delivery_personnel dp
+                SET avg_rating = (
+                    SELECT AVG(delivery_rating) 
+                    FROM ratings 
+                    WHERE delivery_person_id = %s
+                )
+                WHERE delivery_person_id = %s
+                """
+                execute_query(delivery_update, (delivery_person_id, delivery_person_id), fetch=False)
+            
+            if result is not None:
+                QMessageBox.information(self, "Success", "Thank you for your rating!")
+                dialog.accept()
+                
+                # Refresh orders list to show updated status
+                self.load_orders()
+            else:
+                QMessageBox.critical(self, "Error", "Failed to submit rating")
+        except Exception as e:
+            print(f"Error submitting rating: {e}")
+            QMessageBox.critical(self, "Error", f"An error occurred: {str(e)}")
 
     def load_customer_profile(self):
         """Load customer profile information from database"""
