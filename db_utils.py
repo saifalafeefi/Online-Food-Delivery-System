@@ -128,22 +128,38 @@ def execute_query(query, params=None, fetch=True):
         print(f"Database connection error: {e}")
         return None 
 
-def search_restaurants(search_term=None, cuisine_type=None, location=None):
-    """Search restaurants by name, cuisine type, or location"""
+def search_restaurants(search_term=None, cuisine_type=None, location=None, include_inactive=False):
+    """Search restaurants by name, cuisine type, or location
+    
+    Args:
+        search_term (str): Term to search in name, cuisine, description, address
+        cuisine_type (str): Specific cuisine type to filter
+        location (str): Location to search in address
+        include_inactive (bool): If True, include suspended restaurants (for admin use)
+    """
     try:
         query = """
-        SELECT r.*, u.email, u.username 
+        SELECT r.*, u.email, u.username, u.is_active
         FROM restaurants r
         JOIN users u ON r.user_id = u.user_id
         WHERE 1=1
         """
         params = []
         
+        # Only include active restaurants unless explicitly requested
+        if not include_inactive:
+            query += " AND u.is_active = 1"
+        
         if search_term:
-            query += " AND (r.name LIKE %s OR r.description LIKE %s)"
-            params.extend([f"%{search_term}%", f"%{search_term}%"])
+            query += """ AND (
+                r.name LIKE %s OR 
+                r.cuisine_type LIKE %s OR 
+                r.description LIKE %s OR 
+                r.address LIKE %s
+            )"""
+            params.extend([f"%{search_term}%", f"%{search_term}%", f"%{search_term}%", f"%{search_term}%"])
             
-        if cuisine_type:
+        if cuisine_type:  # Only add this filter if cuisine_type is not None
             query += " AND r.cuisine_type = %s"
             params.append(cuisine_type)
             
@@ -160,7 +176,7 @@ def search_restaurants(search_term=None, cuisine_type=None, location=None):
 
 def search_menu_items(search_term=None, restaurant_id=None, category=None, 
                      min_price=None, max_price=None, is_vegetarian=None):
-    """Search menu items with various filters"""
+    """Search menu items with various filters, including by name and ingredients"""
     try:
         query = """
         SELECT m.*, r.name as restaurant_name, r.cuisine_type
@@ -171,14 +187,18 @@ def search_menu_items(search_term=None, restaurant_id=None, category=None,
         params = []
         
         if search_term:
-            query += " AND (m.dish_name LIKE %s OR m.description LIKE %s)"
+            # Search in dish name and description (which may contain ingredients)
+            query += """ AND (
+                m.dish_name LIKE %s OR 
+                m.description LIKE %s
+            )"""
             params.extend([f"%{search_term}%", f"%{search_term}%"])
             
         if restaurant_id:
             query += " AND m.restaurant_id = %s"
             params.append(restaurant_id)
             
-        if category:
+        if category and category != "All":
             query += " AND m.category = %s"
             params.append(category)
             
@@ -202,9 +222,10 @@ def search_menu_items(search_term=None, restaurant_id=None, category=None,
         return None
 
 def search_orders(customer_id=None, restaurant_id=None, status=None, 
-                 start_date=None, end_date=None):
-    """Search orders with various filters"""
+                 start_date=None, end_date=None, customer_name=None, order_id=None, order_number=None):
+    """Search orders with various filters including customer name, order date, status, and order number"""
     try:
+        # Basic query with JOIN statements
         query = """
         SELECT o.*, 
                c.name as customer_name, 
@@ -218,6 +239,7 @@ def search_orders(customer_id=None, restaurant_id=None, status=None,
         """
         params = []
         
+        # Apply individual filters based on provided parameters
         if customer_id:
             query += " AND o.customer_id = %s"
             params.append(customer_id)
@@ -226,19 +248,46 @@ def search_orders(customer_id=None, restaurant_id=None, status=None,
             query += " AND o.restaurant_id = %s"
             params.append(restaurant_id)
             
-        if status:
+        if status and status != "All":
             query += " AND o.delivery_status = %s"
             params.append(status)
             
         if start_date:
-            query += " AND o.order_date >= %s"
+            query += " AND DATE(o.order_date) >= %s"
             params.append(start_date)
             
         if end_date:
-            query += " AND o.order_date <= %s"
+            query += " AND DATE(o.order_date) <= %s"
             params.append(end_date)
+        
+        # Search for customer name or order number/ID
+        # This is important - we need to handle the search term properly
+        if order_number or customer_name:
+            search_term = order_number if order_number else customer_name
+            # Create a complex OR condition for searching
+            query += """ AND (
+                c.name LIKE %s 
+                OR o.order_id = %s 
+                OR CAST(o.order_id AS CHAR) = %s
+                OR o.order_number LIKE %s
+            )"""
+            # Add wildcards for text searches
+            name_pattern = f"%{search_term}%"
+            order_pattern = f"%{search_term}%"
+            # Try to convert to integer for direct ID comparison
+            try:
+                id_val = int(search_term)
+            except (ValueError, TypeError):
+                id_val = -1  # Use -1 which won't match any ID
             
+            params.extend([name_pattern, id_val, search_term, order_pattern])
+        
+        # Order by most recent first
         query += " ORDER BY o.order_date DESC"
+
+        # Debug the query
+        print(f"Query: {query}")
+        print(f"Params: {params}")
         
         return execute_query(query, params)
     except Exception as e:

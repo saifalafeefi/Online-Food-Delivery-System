@@ -529,21 +529,56 @@ class CustomerDashboard(QWidget):
         page = QWidget()
         layout = QVBoxLayout(page)
         
-        # Search bar
-        search_layout = QHBoxLayout()
-        self.search_input = QLineEdit()
-        self.search_input.setPlaceholderText("Search restaurants...")
-        self.search_input.textChanged.connect(self.load_restaurants)
-        search_btn = QPushButton("Advanced Search")
-        search_btn.clicked.connect(self.show_search_dialog)
-        search_layout.addWidget(self.search_input)
-        search_layout.addWidget(search_btn)
-        layout.addLayout(search_layout)
+        # Header
+        header = QLabel("Browse Restaurants")
+        header.setFont(QFont("Arial", 24))
+        
+        # Search bar and filter section
+        search_bar_layout = QHBoxLayout()
+        
+        # Search input
+        self.restaurant_search_input = QLineEdit()
+        self.restaurant_search_input.setPlaceholderText("Search by name, cuisine, or location...")
+        
+        # Filter dropdown
+        self.cuisine_filter = QComboBox()
+        self.cuisine_filter.addItem("All Cuisines")
+        cuisines = ["Italian", "Chinese", "Indian", "Japanese", "Mexican", "American", "Thai", "French", "Mediterranean", "Other"]
+        self.cuisine_filter.addItems(cuisines)
+        
+        # Location input
+        self.location_input = QLineEdit()
+        self.location_input.setPlaceholderText("Location...")
+        
+        # Search button
+        search_btn = QPushButton("Search")
+        search_btn.setObjectName("action-button")
+        search_btn.clicked.connect(self.perform_restaurant_search)
+        
+        # Add to layout
+        search_bar_layout.addWidget(self.restaurant_search_input, 3)
+        search_bar_layout.addWidget(self.cuisine_filter, 2)
+        search_bar_layout.addWidget(self.location_input, 2)
+        search_bar_layout.addWidget(search_btn, 1)
         
         # Restaurants grid
-        self.restaurants_grid = QGridLayout()
-        self.restaurants_grid.setSpacing(20)
-        layout.addLayout(self.restaurants_grid)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        
+        # Content widget
+        content = QWidget()
+        self.restaurants_grid = QGridLayout(content)
+        self.restaurants_grid.setAlignment(Qt.AlignmentFlag.AlignTop)
+        
+        scroll.setWidget(content)
+        
+        # Add to main layout
+        layout.addWidget(header)
+        layout.addLayout(search_bar_layout)
+        layout.addWidget(scroll)
+        
+        # Load restaurants
+        self.load_restaurants()
         
         return page
     
@@ -691,37 +726,8 @@ class CustomerDashboard(QWidget):
         
         return page
     
-    def load_restaurants(self):
-        # Clear existing restaurants
-        while self.restaurants_grid.count():
-            item = self.restaurants_grid.takeAt(0)
-            widget = item.widget()
-            if widget:
-                widget.deleteLater()
-        
-        # Get search term from input
-        search_term = self.search_input.text().strip()
-        
-        # Get restaurants from database
-        restaurants = execute_query("""
-            SELECT r.*, u.email, u.username 
-            FROM restaurants r
-            JOIN users u ON r.user_id = u.user_id
-            ORDER BY r.rating DESC, r.name ASC
-        """)
-        
-        # Filter restaurants if search term exists
-        if search_term:
-            restaurants = [r for r in restaurants if 
-                         search_term.lower() in r['name'].lower() or 
-                         (r['description'] is not None and search_term.lower() in r['description'].lower())]
-        
-        if not restaurants:
-            empty_label = QLabel("No restaurants found")
-            empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            self.restaurants_grid.addWidget(empty_label, 0, 0)
-            return
-        
+    def create_restaurant_card(self, restaurant):
+        """Create a card for displaying a restaurant"""
         # Get customer's favorite restaurants for comparison
         favorite_restaurant_ids = []
         if self.customer_id:
@@ -734,62 +740,138 @@ class CustomerDashboard(QWidget):
             if favorites:
                 favorite_restaurant_ids = [f['restaurant_id'] for f in favorites]
         
-        # Create restaurant cards
-        row, col = 0, 0
-        max_cols = 2
+        # Create restaurant card
+        card = QFrame()
+        card.setObjectName("restaurant-card")
+        card.setProperty("class", "restaurant-card")
+        card_layout = QVBoxLayout(card)
         
-        for restaurant in restaurants:
-            card = QFrame()
-            card.setObjectName("restaurant-card")
-            card.setProperty("class", "restaurant-card")
-            card_layout = QVBoxLayout(card)
+        # Check if restaurant is active
+        is_active = restaurant.get('is_active', True)
+        
+        name_label = QLabel(restaurant['name'])
+        name_label.setProperty("class", "restaurant-name")
+        name_label.setFont(QFont("Arial", 14, QFont.Weight.Bold))
+        
+        cuisine_label = QLabel(f"Cuisine: {restaurant['cuisine_type']}")
+        cuisine_label.setProperty("class", "restaurant-cuisine")
+        
+        rating_label = QLabel(f"Rating: {restaurant['rating']:.1f}★")
+        rating_label.setProperty("class", "restaurant-rating")
+        
+        # Button container
+        btn_container = QHBoxLayout()
+        
+        view_button = QPushButton("View Menu")
+        view_button.setObjectName("action-button")
+        view_button.clicked.connect(lambda _, id=restaurant['restaurant_id']: self.view_restaurant(id))
+        
+        # Check if restaurant is already in favorites
+        is_favorite = restaurant['restaurant_id'] in favorite_restaurant_ids
+        favorite_button = QPushButton("♥ Favorited" if is_favorite else "♡ Add to Favorites")
+        favorite_button.setObjectName("favorite-button" if is_favorite else "add-favorite-button")
+        
+        # Set button properties
+        if is_favorite:
+            favorite_button.setEnabled(False)  # Disable if already a favorite
+        else:
+            favorite_button.clicked.connect(
+                lambda _, id=restaurant['restaurant_id']: self.add_to_favorites(id)
+            )
+        
+        btn_container.addWidget(view_button)
+        btn_container.addWidget(favorite_button)
+        
+        card_layout.addWidget(name_label)
+        card_layout.addWidget(cuisine_label)
+        card_layout.addWidget(rating_label)
+        card_layout.addLayout(btn_container)
+        
+        # If restaurant is suspended, add overlay and disable buttons
+        if not is_active:
+            # Style the card to look greyed out
+            card.setStyleSheet("""
+                QFrame {
+                    background-color: rgba(200, 200, 200, 0.8);
+                    border-radius: 8px;
+                    border: 1px solid #ddd;
+                }
+                QLabel {
+                    color: #555;
+                }
+            """)
             
-            name_label = QLabel(restaurant['name'])
-            name_label.setProperty("class", "restaurant-name")
-            name_label.setFont(QFont("Arial", 14, QFont.Weight.Bold))
+            # Create suspended label overlay
+            suspended_label = QLabel("SUSPENDED")
+            suspended_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            suspended_label.setStyleSheet("""
+                background-color: rgba(231, 76, 60, 0.8);
+                color: white;
+                font-weight: bold;
+                font-size: 16px;
+                padding: 8px;
+                border-radius: 4px;
+            """)
             
-            cuisine_label = QLabel(f"Cuisine: {restaurant['cuisine_type']}")
-            cuisine_label.setProperty("class", "restaurant-cuisine")
+            # Add to layout (on top of everything)
+            card_layout.insertWidget(0, suspended_label)
             
-            rating_label = QLabel(f"Rating: {restaurant['rating']:.1f}★")
-            rating_label.setProperty("class", "restaurant-rating")
-            
-            # Button container
-            btn_container = QHBoxLayout()
-            
-            view_button = QPushButton("View Menu")
-            view_button.setObjectName("action-button")
-            view_button.clicked.connect(lambda _, id=restaurant['restaurant_id']: self.view_restaurant(id))
-            
-            # Check if restaurant is already in favorites
-            is_favorite = restaurant['restaurant_id'] in favorite_restaurant_ids
-            favorite_button = QPushButton("♥ Favorited" if is_favorite else "♡ Add to Favorites")
-            favorite_button.setObjectName("favorite-button" if is_favorite else "add-favorite-button")
-            
-            # Set button properties
-            if is_favorite:
-                favorite_button.setEnabled(False)  # Disable if already a favorite
-            else:
-                favorite_button.clicked.connect(
-                    lambda _, id=restaurant['restaurant_id']: self.add_to_favorites(id)
-                )
-            
-            btn_container.addWidget(view_button)
-            btn_container.addWidget(favorite_button)
-            
-            card_layout.addWidget(name_label)
-            card_layout.addWidget(cuisine_label)
-            card_layout.addWidget(rating_label)
-            card_layout.addLayout(btn_container)
-            
-            self.restaurants_grid.addWidget(card, row, col)
-            
-            col += 1
-            if col >= max_cols:
-                col = 0
-                row += 1
+            # Disable the buttons
+            view_button.setEnabled(False)
+            favorite_button.setEnabled(False)
+        
+        return card
+
+    def load_restaurants(self):
+        # Clear existing restaurants
+        while self.restaurants_grid.count():
+            item = self.restaurants_grid.takeAt(0)
+            widget = item.widget()
+            if widget:
+                widget.deleteLater()
+        
+        # Get search term from input
+        search_term = self.restaurant_search_input.text().strip()
+        cuisine_type = self.cuisine_filter.currentText()
+        if cuisine_type == "All Cuisines":
+            cuisine_type = None
+        location = self.location_input.text().strip()
+        
+        # Get restaurants from database - include inactive to show as suspended
+        from db_utils import search_restaurants
+        restaurants = search_restaurants(
+            search_term=search_term, 
+            cuisine_type=cuisine_type, 
+            location=location, 
+            include_inactive=True  # Include inactive restaurants to display as suspended
+        )
+        
+        if not restaurants:
+            empty_label = QLabel("No restaurants found")
+            empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.restaurants_grid.addWidget(empty_label, 0, 0)
+            return
+        
+        # Display the restaurants
+        self.display_restaurants(restaurants)
     
     def view_restaurant(self, restaurant_id):
+        # Check if restaurant is active before displaying
+        restaurant_info = execute_query("""
+            SELECT r.*, u.is_active
+            FROM restaurants r
+            JOIN users u ON r.user_id = u.user_id
+            WHERE r.restaurant_id = %s
+        """, (restaurant_id,))
+        
+        if not restaurant_info or not restaurant_info[0]['is_active']:
+            QMessageBox.warning(
+                self, 
+                "Restaurant Suspended", 
+                "This restaurant is currently suspended and not accepting orders.\n\nPlease choose another restaurant."
+            )
+            return
+        
         # Get restaurant view
         restaurant_view = RestaurantView(restaurant_id)
         restaurant_view.back_to_restaurants.connect(self.browse_restaurants)
@@ -978,7 +1060,7 @@ class CustomerDashboard(QWidget):
         total_layout = QHBoxLayout()
         total_label = QLabel("Total:")
         total_label.setFont(QFont("Arial", 14, QFont.Weight.Bold))
-        total_amount = QLabel(f"AED {total:.2f}")
+        total_amount = QLabel(f"AED {float(total):.2f}")
         total_amount.setFont(QFont("Arial", 14, QFont.Weight.Bold))
         total_amount.setAlignment(Qt.AlignmentFlag.AlignRight)
         
@@ -1115,6 +1197,17 @@ class CustomerDashboard(QWidget):
                 fetch=False
             )
             
+            # Generate and update order number
+            import datetime
+            today = datetime.datetime.now()
+            order_number = f"ORD-{today.strftime('%Y%m%d')}-{order_id:04d}"
+            
+            # Update the order with the generated order number
+            update_order_number = """
+            UPDATE orders SET order_number = %s WHERE order_id = %s
+            """
+            execute_query(update_order_number, (order_number, order_id), fetch=False)
+            
             # Add order items with unit_price and total_price
             for item in self.cart_items:
                 menu_item = item['menu_item']
@@ -1153,11 +1246,11 @@ class CustomerDashboard(QWidget):
             self.update_cart_display()
             dialog.accept()
             
-            # Show success message
+            # Show success message with order number instead of ID
             QMessageBox.information(
                 self, 
                 "Order Placed", 
-                f"Your order has been placed successfully. Order #: {order_id}"
+                f"Your order has been placed successfully. Order #: {order_number}"
             )
             
             # Go to orders page
@@ -1216,8 +1309,15 @@ class CustomerDashboard(QWidget):
         # Order header
         header_layout = QHBoxLayout()
         
-        # Order ID and date
-        order_id_label = QLabel(f"Order #{order['order_id']}")
+        # Use order_number if available, otherwise fall back to order_id
+        order_display = order.get('order_number', '')
+        if not order_display or order_display.strip() == '':
+            order_display = f"#{order['order_id']}"
+        else:
+            order_display = f"#{order_display}"
+            
+        # Order number and date
+        order_id_label = QLabel(f"Order {order_display}")
         order_id_label.setObjectName("order-id")
         order_id_label.setFont(QFont("Arial", 16, QFont.Weight.Bold))
         
@@ -1267,9 +1367,9 @@ class CustomerDashboard(QWidget):
         payment_layout.addWidget(total_amount)
         
         # View details button
-        details_btn = QPushButton("View Order Details")
-        details_btn.setObjectName("action-button")
-        details_btn.clicked.connect(lambda: self.view_order_details(order['order_id']))
+        details_btn = QPushButton("View Details")
+        details_btn.setObjectName("view-details-btn")
+        details_btn.clicked.connect(lambda checked, oid=order['order_id']: self.view_order_details(oid))
         
         # Add all elements to card
         card_layout.addLayout(header_layout)
@@ -1303,15 +1403,22 @@ class CustomerDashboard(QWidget):
             WHERE oi.order_id = %s
         """, (order_id,))
         
+        # Use order_number if available, otherwise fall back to order_id
+        order_display = order.get('order_number', '')
+        if not order_display or order_display.strip() == '':
+            order_display = f"#{order_id}"
+        else:
+            order_display = f"#{order_display}"
+        
         # Create dialog
         dialog = QDialog(self)
-        dialog.setWindowTitle(f"Order #{order_id} Details")
+        dialog.setWindowTitle(f"Order {order_display} Details")
         dialog.setMinimumWidth(500)
         
         layout = QVBoxLayout(dialog)
         
         # Order header
-        header_label = QLabel(f"Order #{order_id}")
+        header_label = QLabel(f"Order {order_display}")
         header_label.setFont(QFont("Arial", 18, QFont.Weight.Bold))
         
         # Order info
@@ -1768,31 +1875,34 @@ class CustomerDashboard(QWidget):
         # Reset the source call tracker
         self._source_call = None
 
-    def show_search_dialog(self):
-        dialog = SearchDialog(self)
-        if dialog.exec() == QDialog.DialogCode.Accepted:
-            search_type = dialog.search_type.currentText()
-            search_term = dialog.search_term.text()
-            
-            if search_type == "Restaurants":
-                cuisine_type = dialog.cuisine_type.currentText()
-                location = dialog.location.text()
-                self.search_restaurants(search_term, cuisine_type, location)
-            elif search_type == "Menu Items":
-                category = dialog.category.currentText()
-                min_price = dialog.min_price.text()
-                max_price = dialog.max_price.text()
-                is_vegetarian = dialog.is_vegetarian.currentText()
-                self.search_menu_items(search_term, category, min_price, max_price, is_vegetarian)
-            elif search_type == "Orders":
-                status = dialog.status.currentText()
-                start_date = dialog.start_date.text()
-                end_date = dialog.end_date.text()
-                self.search_orders(search_term, status, start_date, end_date)
-    
+    def perform_restaurant_search(self):
+        """Execute restaurant search based on the search bar inputs"""
+        search_term = self.restaurant_search_input.text()
+        cuisine_type = self.cuisine_filter.currentText()
+        if cuisine_type == "All Cuisines":
+            cuisine_type = None
+        location = self.location_input.text()
+        
+        self.search_restaurants(search_term, cuisine_type, location)
+
     def search_restaurants(self, search_term=None, cuisine_type=None, location=None):
         from db_utils import search_restaurants
-        results = search_restaurants(search_term, cuisine_type, location)
+        
+        # If empty search term, empty location, and "All" cuisines, just load all restaurants
+        if not search_term and not cuisine_type and not location:
+            self.load_restaurants()
+            return
+            
+        # Otherwise perform the search - include inactive so we can display them as suspended
+        results = search_restaurants(search_term, cuisine_type, location, include_inactive=True)
+        
+        # Handle case where results is None (error in search)
+        if results is None:
+            print("Error: search_restaurants returned None")
+            empty_results = []
+            self.display_restaurants(empty_results)
+            return
+            
         self.display_restaurants(results)
     
     def search_menu_items(self, search_term=None, category=None, min_price=None, max_price=None, is_vegetarian=None):
@@ -1805,6 +1915,7 @@ class CustomerDashboard(QWidget):
             
         results = search_menu_items(
             search_term=search_term,
+            restaurant_id=self.current_restaurant['restaurant_id'] if self.current_restaurant else None,
             category=category if category != "All" else None,
             min_price=float(min_price) if min_price else None,
             max_price=float(max_price) if max_price else None,
@@ -1816,6 +1927,7 @@ class CustomerDashboard(QWidget):
         from db_utils import search_orders
         results = search_orders(
             customer_id=self.customer_id,
+            customer_name=search_term,
             status=status if status != "All" else None,
             start_date=start_date,
             end_date=end_date
@@ -1826,8 +1938,9 @@ class CustomerDashboard(QWidget):
         # Clear existing restaurants
         while self.restaurants_grid.count():
             item = self.restaurants_grid.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
+            widget = item.widget()
+            if widget:
+                widget.deleteLater()
         
         if not restaurants:
             no_results = QLabel("No restaurants found")
@@ -1848,8 +1961,9 @@ class CustomerDashboard(QWidget):
         # Clear existing items
         while self.restaurants_grid.count():
             item = self.restaurants_grid.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
+            widget = item.widget()
+            if widget:
+                widget.deleteLater()
         
         if not menu_items:
             no_results = QLabel("No menu items found")
@@ -1902,8 +2016,9 @@ class CustomerDashboard(QWidget):
         # Clear existing items
         while self.restaurants_grid.count():
             item = self.restaurants_grid.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
+            widget = item.widget()
+            if widget:
+                widget.deleteLater()
         
         if not orders:
             no_results = QLabel("No orders found")

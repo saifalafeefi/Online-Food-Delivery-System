@@ -320,17 +320,16 @@ class AdminDashboard(QWidget):
         header.setFont(QFont("Arial", 20, QFont.Weight.Bold))
         header_layout.addWidget(header)
         
-        # Action buttons
-        add_btn = QPushButton("Add Restaurant")
-        add_btn.setObjectName("action-button")
-        add_btn.clicked.connect(self.add_restaurant)
+        # Info label to explain admin's role
+        info_label = QLabel("Review and manage restaurant accounts")
+        info_label.setObjectName("info-label")
+        header_layout.addWidget(info_label)
         header_layout.addStretch()
-        header_layout.addWidget(add_btn)
         
         # Table for restaurants
         self.restaurant_table = QTableWidget()
-        self.restaurant_table.setColumnCount(6)
-        self.restaurant_table.setHorizontalHeaderLabels(["ID", "Name", "Address", "Cuisine Type", "Rating", "Actions"])
+        self.restaurant_table.setColumnCount(7)
+        self.restaurant_table.setHorizontalHeaderLabels(["ID", "Name", "Address", "Cuisine Type", "Rating", "Status", "Actions"])
         self.restaurant_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.restaurant_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.restaurant_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
@@ -350,7 +349,12 @@ class AdminDashboard(QWidget):
         self.restaurant_table.setRowCount(0)
         
         try:
-            restaurants = execute_query("SELECT * FROM restaurants ORDER BY restaurant_id")
+            restaurants = execute_query("""
+                SELECT r.*, u.is_active, u.user_id as user_id
+                FROM restaurants r
+                JOIN users u ON r.user_id = u.user_id
+                ORDER BY r.restaurant_id
+            """)
             
             if not restaurants:
                 self.display_no_data_message(self.restaurant_table, "No restaurants found")
@@ -364,41 +368,94 @@ class AdminDashboard(QWidget):
                 self.restaurant_table.setItem(row, 3, QTableWidgetItem(restaurant['cuisine_type']))
                 self.restaurant_table.setItem(row, 4, QTableWidgetItem(str(restaurant['rating'])))
                 
+                # Status cell
+                is_active = restaurant.get('is_active', True)
+                status_item = QTableWidgetItem("Active" if is_active else "Suspended")
+                status_item.setForeground(Qt.GlobalColor.darkGreen if is_active else Qt.GlobalColor.red)
+                self.restaurant_table.setItem(row, 5, status_item)
+                
                 # Create buttons cell
                 buttons_widget = QWidget()
                 buttons_layout = QHBoxLayout(buttons_widget)
                 buttons_layout.setContentsMargins(0, 0, 0, 0)
                 
-                edit_btn = QPushButton("Edit")
-                edit_btn.setObjectName("action-button")
-                edit_btn.clicked.connect(lambda checked, r=restaurant: self.edit_restaurant(r))
+                view_btn = QPushButton("View")
+                view_btn.setObjectName("action-button")
+                view_btn.setMinimumWidth(80)
+                view_btn.setStyleSheet("""
+                    text-align: center;
+                    background-color: #3498db;
+                    color: white;
+                    border-radius: 4px;
+                    padding: 8px 15px;
+                    margin: 2px;
+                    font-size: 12px;
+                    font-weight: bold;
+                """)
+                view_btn.clicked.connect(lambda checked, r=restaurant: self.view_restaurant(r))
                 
+                # Use suspend/activate button depending on current status
+                if is_active:
+                    status_btn = QPushButton("Suspend")
+                    status_btn.setObjectName("warning-button")
+                    status_btn.setMinimumWidth(80)
+                    status_btn.setStyleSheet("""
+                        text-align: center;
+                        background-color: #f39c12;
+                        color: white;
+                        border-radius: 4px;
+                        padding: 8px 15px;
+                        margin: 2px;
+                        font-size: 12px;
+                        font-weight: bold;
+                    """)
+                    status_btn.clicked.connect(lambda checked, id=restaurant.get('user_id'): self.toggle_restaurant_status(id, False))
+                else:
+                    status_btn = QPushButton("Activate")
+                    status_btn.setObjectName("action-button")
+                    status_btn.setMinimumWidth(80)
+                    status_btn.setStyleSheet("""
+                        text-align: center;
+                        background-color: #2ecc71;
+                        color: white;
+                        border-radius: 4px;
+                        padding: 8px 15px;
+                        margin: 2px;
+                        font-size: 12px;
+                        font-weight: bold;
+                    """)
+                    status_btn.clicked.connect(lambda checked, id=restaurant.get('user_id'): self.toggle_restaurant_status(id, True))
+                
+                # Add delete button
                 delete_btn = QPushButton("Delete")
                 delete_btn.setObjectName("delete-button")
+                delete_btn.setMinimumWidth(80)
+                delete_btn.setStyleSheet("""
+                    text-align: center;
+                    background-color: #e74c3c;
+                    color: white;
+                    border-radius: 4px;
+                    padding: 8px 15px;
+                    margin: 2px;
+                    font-size: 12px;
+                    font-weight: bold;
+                """)
                 delete_btn.clicked.connect(lambda checked, id=restaurant['restaurant_id']: self.delete_restaurant(id))
                 
-                buttons_layout.addWidget(edit_btn)
+                buttons_layout.addWidget(view_btn)
+                buttons_layout.addWidget(status_btn)
                 buttons_layout.addWidget(delete_btn)
                 
-                self.restaurant_table.setCellWidget(row, 5, buttons_widget)
+                self.restaurant_table.setCellWidget(row, 6, buttons_widget)
         except Exception as e:
             print(f"Error loading restaurants: {e}")
             self.display_db_error_message(self.restaurant_table)
-    
-    def add_restaurant(self):
-        dialog = RestaurantDialog(self)
-        if dialog.exec() == QDialog.DialogCode.Accepted:
-            self.load_restaurants()
-    
-    def edit_restaurant(self, restaurant):
-        dialog = RestaurantDialog(self, restaurant)
-        if dialog.exec() == QDialog.DialogCode.Accepted:
-            self.load_restaurants()
-    
+            
     def delete_restaurant(self, restaurant_id):
+        """Delete a restaurant completely from the system"""
         reply = QMessageBox.question(
             self, "Confirm Deletion", 
-            "Are you sure you want to delete this restaurant? This will also delete all menus and orders associated with it.",
+            "Are you sure you want to delete this restaurant? This will permanently remove all menus and orders associated with it.",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
         )
         
@@ -414,6 +471,42 @@ class AdminDashboard(QWidget):
                 self.load_restaurants()
             else:
                 QMessageBox.critical(self, "Error", "Failed to delete restaurant")
+    
+    def view_restaurant(self, restaurant):
+        """View restaurant details"""
+        dialog = RestaurantDialog(self, restaurant, view_only=True)
+        dialog.exec()
+    
+    def toggle_restaurant_status(self, user_id, active_status):
+        """Activate or suspend a restaurant account"""
+        status_text = "activate" if active_status else "suspend"
+        
+        reply = QMessageBox.question(
+            self, f"Confirm {status_text.capitalize()}", 
+            f"Are you sure you want to {status_text} this restaurant account?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        
+        if reply == QMessageBox.StandardButton.Yes:
+            result = execute_query(
+                "UPDATE users SET is_active = %s WHERE user_id = %s",
+                (active_status, user_id),
+                fetch=False
+            )
+            
+            if result is not None:
+                QMessageBox.information(
+                    self, 
+                    "Success", 
+                    f"Restaurant account {'activated' if active_status else 'suspended'} successfully"
+                )
+                self.load_restaurants()
+            else:
+                QMessageBox.critical(
+                    self, 
+                    "Error", 
+                    f"Failed to {status_text} restaurant account"
+                )
     
     def create_users_page(self):
         page = QWidget()
@@ -848,17 +941,47 @@ class AdminDashboard(QWidget):
                 # Action buttons
                 actions_widget = QWidget()
                 actions_layout = QHBoxLayout(actions_widget)
-                actions_layout.setContentsMargins(0, 0, 0, 0)
-                actions_layout.setSpacing(5)
+                actions_layout.setContentsMargins(4, 4, 4, 4)
+                actions_layout.setSpacing(8)
                 
                 edit_btn = QPushButton("Edit")
-                edit_btn.setObjectName("action-button")
-                edit_btn.setMinimumWidth(edit_btn.sizeHint().width() + 10)
+                edit_btn.setStyleSheet("""
+                    QPushButton {
+                        background-color: #3498db;
+                        color: white;
+                        border: none;
+                        border-radius: 4px;
+                        padding: 6px 12px;
+                        font-weight: bold;
+                    }
+                    QPushButton:hover {
+                        background-color: #2980b9;
+                    }
+                    QPushButton:pressed {
+                        background-color: #1c6ea4;
+                    }
+                """)
+                edit_btn.setMinimumWidth(80)
                 edit_btn.clicked.connect(lambda _, p=person: self.edit_delivery_person(p))
                 
                 delete_btn = QPushButton("Delete")
-                delete_btn.setObjectName("delete-button")
-                delete_btn.setMinimumWidth(delete_btn.sizeHint().width() + 10)
+                delete_btn.setStyleSheet("""
+                    QPushButton {
+                        background-color: #e74c3c;
+                        color: white;
+                        border: none;
+                        border-radius: 4px;
+                        padding: 6px 12px;
+                        font-weight: bold;
+                    }
+                    QPushButton:hover {
+                        background-color: #c0392b;
+                    }
+                    QPushButton:pressed {
+                        background-color: #a93226;
+                    }
+                """)
+                delete_btn.setMinimumWidth(80)
                 delete_btn.clicked.connect(lambda _, pid=person['delivery_person_id']: self.delete_delivery_person(pid))
                 
                 actions_layout.addWidget(edit_btn)
@@ -901,144 +1024,253 @@ class AdminDashboard(QWidget):
                 QMessageBox.warning(self, "Error", "Failed to remove delivery person")
                 
     def create_orders_page(self):
+        """Create the orders management page"""
         page = QWidget()
         layout = QVBoxLayout(page)
         
-        # Header and filter section
-        header_layout = QHBoxLayout()
-        header = QLabel("Order Management")
+        # Header section
+        header = QLabel("Orders Management")
         header.setFont(QFont("Arial", 20, QFont.Weight.Bold))
-        header_layout.addWidget(header)
         
-        # Status filter
-        filter_layout = QHBoxLayout()
-        filter_label = QLabel("Filter by status:")
+        # Search section
+        search_layout = QHBoxLayout()
+        
+        # Search input
+        search_label = QLabel("Search:")
+        self.orders_search_input = QLineEdit()
+        self.orders_search_input.setPlaceholderText("Search by customer name or order number")
+        self.orders_search_input.setFixedWidth(300)
+        
+        # Date range
+        date_label = QLabel("Date:")
+        self.start_date = QDateEdit()
+        self.start_date.setCalendarPopup(True)
+        self.start_date.setDate(QDate.currentDate().addMonths(-1))  # Default to last month
+        
+        # Style the date edit to match app theme
+        self.start_date.setStyleSheet("""
+            QDateEdit {
+                background-color: white;
+                color: #2c3e50;
+                border: 1px solid #ddd;
+                border-radius: 4px;
+                padding: 4px;
+            }
+            QCalendarWidget {
+                background-color: white;
+                color: #2c3e50;
+            }
+            QCalendarWidget QToolButton {
+                background-color: #3498db;
+                color: white;
+                border-radius: 2px;
+            }
+            QCalendarWidget QMenu {
+                background-color: white;
+                color: #2c3e50;
+            }
+            QCalendarWidget QSpinBox {
+                background-color: white;
+                color: #2c3e50;
+                selection-background-color: #3498db;
+                selection-color: white;
+            }
+            QCalendarWidget QAbstractItemView:enabled {
+                color: #2c3e50;
+                background-color: white;
+                selection-background-color: #3498db;
+                selection-color: white;
+            }
+            QCalendarWidget QAbstractItemView:disabled {
+                color: #ccc;
+            }
+        """)
+        
+        to_label = QLabel("to")
+        
+        self.end_date = QDateEdit()
+        self.end_date.setCalendarPopup(True)
+        self.end_date.setDate(QDate.currentDate())  # Default to today
+        self.end_date.setStyleSheet(self.start_date.styleSheet())  # Use same style
+        
+        # Order status filter
+        status_label = QLabel("Status:")
         self.order_status_filter = QComboBox()
-        self.order_status_filter.addItems(["All Orders", "Pending", "Confirmed", "Preparing", 
-                                            "Ready for Pickup", "Out for Delivery", "Delivered", "Cancelled"])
-        self.order_status_filter.currentIndexChanged.connect(self.load_orders)
+        self.order_status_filter.addItems([
+            "All Status", "Pending", "Confirmed", "Preparing", "On Delivery", "Delivered", "Cancelled"
+        ])
+        
+        # Search button
+        search_btn = QPushButton("Search")
+        search_btn.setObjectName("action-button")
+        search_btn.clicked.connect(self.search_orders)
         
         # Refresh button
-        refresh_btn = QPushButton("Refresh Orders")
+        refresh_btn = QPushButton("Refresh")
         refresh_btn.setObjectName("action-button")
-        refresh_btn.clicked.connect(lambda: self.load_orders(force_refresh=True))
+        refresh_btn.clicked.connect(lambda: self.load_orders(True))
         
-        filter_layout.addWidget(filter_label)
-        filter_layout.addWidget(self.order_status_filter)
-        filter_layout.addStretch()
-        filter_layout.addWidget(refresh_btn)
+        # Generate order numbers button
+        backfill_btn = QPushButton("Generate Order Numbers")
+        backfill_btn.setObjectName("action-button")
+        backfill_btn.setToolTip("Generate order numbers for orders that don't have them")
+        backfill_btn.clicked.connect(self.backfill_order_numbers)
+        
+        # Add to layout
+        search_layout.addWidget(search_label)
+        search_layout.addWidget(self.orders_search_input, 3)
+        search_layout.addWidget(date_label)
+        search_layout.addWidget(self.start_date)
+        search_layout.addWidget(to_label)
+        search_layout.addWidget(self.end_date)
+        search_layout.addWidget(status_label)
+        search_layout.addWidget(self.order_status_filter, 2)
+        search_layout.addWidget(search_btn)
+        search_layout.addWidget(refresh_btn)
+        search_layout.addWidget(backfill_btn)
         
         # Orders table
         self.orders_table = QTableWidget()
         self.orders_table.setColumnCount(8)
         self.orders_table.setHorizontalHeaderLabels([
-            "Order ID", "Customer", "Restaurant", "Amount", "Status", 
-            "Delivery Person", "Date/Time", "Actions"
+            "Order #", "Date", "Customer", "Restaurant", "Items", "Total", "Status", "Actions"
         ])
         self.orders_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.orders_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.orders_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.orders_table.setAlternatingRowColors(True)
         
-        # Add components to layout
-        layout.addLayout(header_layout)
-        layout.addLayout(filter_layout)
+        # Add to layout
+        layout.addWidget(header)
+        layout.addLayout(search_layout)
         layout.addWidget(self.orders_table)
         
-        # Load orders
-        self.load_orders()
-        
         return page
+    
+    def search_orders(self):
+        """Search orders with the provided criteria"""
+        search_term = self.orders_search_input.text().strip()
+        start_date = self.start_date.date().toString("yyyy-MM-dd")
+        end_date = self.end_date.date().toString("yyyy-MM-dd")
+        status = self.order_status_filter.currentText()
         
-    def load_orders(self, force_refresh=False):
-        """Load orders based on selected filter"""
-        status_filter = self.order_status_filter.currentText() if hasattr(self, 'order_status_filter') else "All Orders"
-        
+        if status == "All Status":
+            status = None
+            
+        # Load orders with search parameters
+        self.load_orders(search_term=search_term, start_date=start_date, end_date=end_date, status=status)
+    
+    def load_orders(self, force_refresh=False, search_term=None, start_date=None, end_date=None, status=None):
+        """Load orders with optional filtering"""
         # Clear existing rows
         self.orders_table.setRowCount(0)
         
         try:
-            # Build query based on filter
-            if status_filter != "All Orders":
-                query = """
-                    SELECT o.*, c.name as customer_name, r.name as restaurant_name,
-                           dp.name as delivery_person_name
-                    FROM orders o
-                    JOIN customers c ON o.customer_id = c.customer_id
-                    JOIN restaurants r ON o.restaurant_id = r.restaurant_id
-                    LEFT JOIN delivery_personnel dp ON o.delivery_person_id = dp.delivery_person_id
-                    WHERE o.delivery_status = %s
-                    ORDER BY o.order_time DESC
-                """
-                orders = execute_query(query, (status_filter,))
-            else:
-                query = """
-                    SELECT o.*, c.name as customer_name, r.name as restaurant_name,
-                           dp.name as delivery_person_name
-                    FROM orders o
-                    JOIN customers c ON o.customer_id = c.customer_id
-                    JOIN restaurants r ON o.restaurant_id = r.restaurant_id
-                    LEFT JOIN delivery_personnel dp ON o.delivery_person_id = dp.delivery_person_id
-                    ORDER BY o.order_time DESC
-                """
-                orders = execute_query(query)
+            # Get orders from database with filters
+            from db_utils import search_orders
+            
+            # Debug
+            print(f"Searching orders with term: '{search_term}', status: {status}, dates: {start_date} to {end_date}")
+            
+            # Check if search_term contains order number
+            order_number = None
+            if search_term and search_term.strip():
+                order_number = search_term
+                print(f"Searching for order number: {order_number}")
+            
+            orders = search_orders(
+                customer_name=search_term,
+                status=status,
+                start_date=start_date,
+                end_date=end_date,
+                order_number=order_number
+            )
             
             if not orders:
-                message = f"No orders with status: {status_filter}" if status_filter != "All Orders" else "No orders found"
-                self.display_no_data_message(self.orders_table, message)
+                print("No orders found matching the criteria")
+                self.display_no_data_message(self.orders_table, "No orders found")
                 return
             
-            # Populate table
-            self.orders_table.setRowCount(len(orders))
+            print(f"Found {len(orders)} orders")
             
-            for i, order in enumerate(orders):
-                # Order ID
-                self.orders_table.setItem(i, 0, QTableWidgetItem(str(order['order_id'])))
+            # Load data
+            for row, order in enumerate(orders):
+                self.orders_table.insertRow(row)
+                
+                # For debugging
+                print(f"Order data: ID={order['order_id']}, Number={order.get('order_number', 'N/A')}")
+                
+                # Order number - use order_id if order_number is None or empty
+                order_num = order.get('order_number', '')
+                if not order_num or order_num.strip() == '':
+                    order_num = str(order['order_id']) 
+                self.orders_table.setItem(row, 0, QTableWidgetItem(order_num))
+                
+                # Date
+                date_time = order['order_date'].strftime("%Y-%m-%d %H:%M")
+                self.orders_table.setItem(row, 1, QTableWidgetItem(date_time))
                 
                 # Customer
-                self.orders_table.setItem(i, 1, QTableWidgetItem(order['customer_name']))
+                self.orders_table.setItem(row, 2, QTableWidgetItem(order['customer_name']))
                 
                 # Restaurant
-                self.orders_table.setItem(i, 2, QTableWidgetItem(order['restaurant_name']))
+                self.orders_table.setItem(row, 3, QTableWidgetItem(order['restaurant_name']))
                 
-                # Amount
-                amount_item = QTableWidgetItem(f"AED {float(order['total_amount']):.2f}")
-                amount_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-                self.orders_table.setItem(i, 3, amount_item)
+                # Items count
+                items_count = execute_query("""
+                    SELECT SUM(quantity) as total FROM order_items WHERE order_id = %s
+                """, (order['order_id'],))
                 
-                # Status with color coding
+                item_text = f"{items_count[0]['total']} items" if items_count and items_count[0]['total'] else "No items"
+                self.orders_table.setItem(row, 4, QTableWidgetItem(item_text))
+                
+                # Total
+                total = QTableWidgetItem(f"{float(order['total_amount']):.2f} AED")
+                self.orders_table.setItem(row, 5, total)
+                
+                # Status
                 status_item = QTableWidgetItem(order['delivery_status'])
+                
+                # Set color based on status
                 if order['delivery_status'] == 'Delivered':
                     status_item.setForeground(Qt.GlobalColor.darkGreen)
                 elif order['delivery_status'] == 'Cancelled':
                     status_item.setForeground(Qt.GlobalColor.red)
-                elif order['delivery_status'] in ['Preparing', 'Ready for Pickup', 'Out for Delivery']:
-                    status_item.setForeground(Qt.GlobalColor.darkBlue)
-                self.orders_table.setItem(i, 4, status_item)
+                elif order['delivery_status'] in ['Preparing', 'On Delivery']:
+                    status_item.setForeground(Qt.GlobalColor.blue)
                 
-                # Delivery Person
-                delivery_name = order['delivery_person_name'] if order['delivery_person_name'] else "Not Assigned"
-                self.orders_table.setItem(i, 5, QTableWidgetItem(delivery_name))
+                self.orders_table.setItem(row, 6, status_item)
                 
-                # Order Date/Time
-                date_time = order['order_time'].strftime("%Y-%m-%d %H:%M")
-                self.orders_table.setItem(i, 6, QTableWidgetItem(date_time))
-                
-                # Actions buttons
-                action_widget = QWidget()
-                action_layout = QHBoxLayout(action_widget)
-                action_layout.setContentsMargins(0, 0, 0, 0)
+                # Actions - view details button
+                actions_widget = QWidget()
+                actions_layout = QHBoxLayout(actions_widget)
+                actions_layout.setContentsMargins(4, 4, 4, 4)
                 
                 view_btn = QPushButton("View")
                 view_btn.setObjectName("action-button")
-                view_btn.clicked.connect(lambda _, id=order['order_id']: self.view_order_details(id))
+                view_btn.clicked.connect(lambda checked, o=order['order_id']: self.view_order_details(o))
                 
-                action_layout.addWidget(view_btn)
-                self.orders_table.setCellWidget(i, 7, action_widget)
+                # Add buttons to layout
+                actions_layout.addWidget(view_btn)
+                
+                # Only add update/cancel buttons for non-completed orders
+                if order['delivery_status'] not in ['Delivered', 'Cancelled']:
+                    status_update = QComboBox()
+                    status_update.addItems(['Update Status', 'Confirmed', 'Preparing', 'On Delivery', 'Delivered', 'Cancelled'])
+                    status_update.setCurrentIndex(0)
+                    status_update.currentTextChanged.connect(
+                        lambda text, oid=order['order_id'], box=status_update: 
+                        self.update_order_status(oid, text) if text != 'Update Status' else None
+                    )
+                    
+                    actions_layout.addWidget(status_update)
+                
+                self.orders_table.setCellWidget(row, 7, actions_widget)
                 
         except Exception as e:
-            print(f"Error loading orders: {e}")
-            self.display_db_error_message(self.orders_table, f"Error loading orders: {str(e)}")
+            error_msg = f"Failed to load orders: {str(e)}"
+            print(error_msg)  # Log to console
+            self.display_db_error_message(self.orders_table, error_msg)
     
     def view_order_details(self, order_id):
         """Show a dialog with detailed order information"""
@@ -1061,6 +1293,13 @@ class AdminDashboard(QWidget):
             
             order = order[0]
             
+            # Use order_number if available, otherwise fall back to order_id
+            order_display = order.get('order_number', '')
+            if not order_display or order_display.strip() == '':
+                order_display = f"#{order_id}"
+            else:
+                order_display = f"#{order_display}"
+            
             # Get order items
             items = execute_query("""
                 SELECT oi.*, m.dish_name
@@ -1071,7 +1310,7 @@ class AdminDashboard(QWidget):
             
             # Create dialog
             dialog = QDialog(self)
-            dialog.setWindowTitle(f"Order #{order_id} Details")
+            dialog.setWindowTitle(f"Order {order_display} Details")
             dialog.setMinimumWidth(600)
             dialog.setStyleSheet("""
                 QDialog {
@@ -1123,7 +1362,7 @@ class AdminDashboard(QWidget):
             layout = QVBoxLayout(dialog)
             
             # Order header
-            header_label = QLabel(f"Order #{order_id}")
+            header_label = QLabel(f"Order {order_display}")
             header_label.setFont(QFont("Arial", 18, QFont.Weight.Bold))
             
             # Status with color
@@ -2615,12 +2854,67 @@ class AdminDashboard(QWidget):
         table.horizontalHeader().setVisible(True)
         for i in range(column_count):
             table.setHorizontalHeaderItem(i, QTableWidgetItem(headers[i]))
+    
+    def backfill_order_numbers(self):
+        """Generate and set order numbers for any orders that don't have them"""
+        try:
+            # First check for orders without order_number
+            orders_without_numbers = execute_query("""
+                SELECT order_id, order_date
+                FROM orders
+                WHERE order_number IS NULL OR order_number = ''
+                ORDER BY order_id
+            """)
+            
+            if not orders_without_numbers:
+                QMessageBox.information(self, "Order Numbers", "All orders already have order numbers assigned.")
+                return
+            
+            # Generate and update order numbers
+            import datetime
+            count = 0
+            
+            for order in orders_without_numbers:
+                order_id = order['order_id']
+                # Use order date or current date if missing
+                order_date = order.get('order_date', datetime.datetime.now())
+                order_number = f"ORD-{order_date.strftime('%Y%m%d')}-{order_id:04d}"
+                
+                # Update the order with the generated order number
+                update_order_number = """
+                UPDATE orders SET order_number = %s WHERE order_id = %s
+                """
+                result = execute_query(update_order_number, (order_number, order_id), fetch=False)
+                if result is not None:
+                    count += 1
+            
+            # Refresh orders display
+            self.load_orders()
+            
+            QMessageBox.information(
+                self, 
+                "Order Numbers Generated", 
+                f"Successfully generated order numbers for {count} orders."
+            )
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "Error",
+                f"Failed to generate order numbers: {str(e)}"
+            )
 
 
 class RestaurantDialog(QDialog):
-    def __init__(self, parent=None, restaurant=None):
+    def __init__(self, parent=None, restaurant=None, view_only=False):
         super().__init__(parent)
         self.restaurant = restaurant
+        self.view_only = view_only if restaurant else False  # Can only be view_only if there's a restaurant
+        
+        if self.restaurant:
+            self.setWindowTitle(f"Restaurant Details - {self.restaurant['name']}")
+        else:
+            self.setWindowTitle("Restaurant Details")
+            
         self.setStyleSheet("""
             QDialog {
                 background-color: #2c3e50;
@@ -2690,16 +2984,34 @@ class RestaurantDialog(QDialog):
         form_layout.addRow("Contact Number:", self.contact_input)
         form_layout.addRow("Cuisine Type:", self.cuisine_input)
         
+        # If this is view-only mode, disable all inputs
+        if self.view_only:
+            self.name_input.setReadOnly(True)
+            self.address_input.setReadOnly(True)
+            self.contact_input.setReadOnly(True)
+            self.cuisine_input.setEnabled(False)
+        
         # Add buttons
         button_layout = QHBoxLayout()
-        save_btn = QPushButton("Save")
-        save_btn.clicked.connect(self.save_restaurant)
         
-        cancel_btn = QPushButton("Cancel")
-        cancel_btn.clicked.connect(self.reject)
-        
-        button_layout.addWidget(save_btn)
-        button_layout.addWidget(cancel_btn)
+        if self.view_only:
+            # In view-only mode, just show a close button
+            close_btn = QPushButton("Close")
+            close_btn.setObjectName("close-button")
+            close_btn.clicked.connect(self.reject)
+            button_layout.addWidget(close_btn)
+        else:
+            # In edit mode, show save and cancel
+            save_btn = QPushButton("Save")
+            save_btn.setObjectName("save-button")
+            save_btn.clicked.connect(self.save_restaurant)
+            
+            cancel_btn = QPushButton("Cancel")
+            cancel_btn.setObjectName("cancel-button")
+            cancel_btn.clicked.connect(self.reject)
+            
+            button_layout.addWidget(save_btn)
+            button_layout.addWidget(cancel_btn)
         
         # Add to main layout
         layout.addLayout(form_layout)
@@ -2741,7 +3053,7 @@ class RestaurantDialog(QDialog):
                 QMessageBox.critical(self, "Error", "Failed to save restaurant")
                 
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"An error occurred: {str(e)}") 
+            QMessageBox.critical(self, "Error", f"An error occurred: {str(e)}")
 
 
 class DeliveryPersonDialog(QDialog):

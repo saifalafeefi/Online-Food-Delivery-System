@@ -3,8 +3,8 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QPushButton,
                              QSizePolicy, QSpacerItem, QStackedWidget, QTableWidget,
                              QTableWidgetItem, QHeaderView, QDialog, QFormLayout,
                              QLineEdit, QComboBox, QMessageBox, QSpinBox, QTextEdit,
-                             QDoubleSpinBox, QTabWidget)
-from PySide6.QtCore import Qt, Signal
+                             QDoubleSpinBox, QTabWidget, QDateEdit)
+from PySide6.QtCore import Qt, Signal, QDate
 from PySide6.QtGui import QFont, QIcon
 from db_utils import execute_query
 
@@ -40,13 +40,73 @@ class RestaurantDashboard(QWidget):
     def load_restaurant_profile(self):
         # Get the restaurant profile for this user
         result = execute_query(
-            "SELECT * FROM restaurants WHERE user_id = %s",
+            "SELECT r.*, u.is_active FROM restaurants r JOIN users u ON r.user_id = u.user_id WHERE r.user_id = %s",
             (self.user.user_id,)
         )
         
         if result:
             self.restaurant_data = result[0]
             self.restaurant_id = self.restaurant_data['restaurant_id']
+            
+            # Check if restaurant is suspended
+            if 'is_active' in self.restaurant_data and not self.restaurant_data['is_active']:
+                # Show suspension notice
+                QMessageBox.warning(
+                    self,
+                    "Account Suspended",
+                    "Your restaurant account has been suspended by the administrator. " +
+                    "While you can still access your dashboard, your restaurant will not be visible to customers. " +
+                    "Please contact support for assistance."
+                )
+                
+                # Add a persistent suspension banner
+                self.show_suspension_banner()
+    
+    def show_suspension_banner(self):
+        """Show a red banner indicating account suspension"""
+        # Create a red banner at the top of the dashboard
+        banner = QFrame()
+        banner.setStyleSheet("""
+            background-color: #e74c3c;
+            color: white;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 5px;
+        """)
+        banner_layout = QHBoxLayout(banner)
+        
+        warning_label = QLabel("⚠️ ACCOUNT SUSPENDED: Your restaurant is not visible to customers")
+        warning_label.setStyleSheet("font-weight: bold; color: white;")
+        
+        contact_btn = QPushButton("Contact Support")
+        contact_btn.setStyleSheet("""
+            background-color: white;
+            color: #e74c3c;
+            border: none;
+            padding: 5px 10px;
+        """)
+        
+        banner_layout.addWidget(warning_label)
+        banner_layout.addStretch()
+        banner_layout.addWidget(contact_btn)
+        
+        # Find main layout and insert at the top
+        main_layout = self.findChild(QHBoxLayout)
+        if main_layout:
+            # Get the widget that contains all content (usually a QStackedWidget)
+            content_widget = None
+            for i in range(main_layout.count()):
+                item = main_layout.itemAt(i)
+                if item.widget() and not item.widget().objectName() == "sidebar":
+                    content_widget = item.widget()
+                    break
+            
+            if content_widget:
+                # Find the content layout
+                content_layout = content_widget.findChild(QVBoxLayout)
+                if content_layout:
+                    # Insert banner at the top
+                    content_layout.insertWidget(0, banner)
     
     def initUI(self):
         self.setWindowTitle("Food Delivery - Restaurant Dashboard")
@@ -297,6 +357,86 @@ class RestaurantDashboard(QWidget):
         header.setAlignment(Qt.AlignmentFlag.AlignLeft)
         header.setFont(QFont("Arial", 24))
         
+        # Search and filter bar
+        search_layout = QHBoxLayout()
+        
+        # Search input for customer name
+        search_label = QLabel("Search:")
+        self.orders_search_input = QLineEdit()
+        self.orders_search_input.setPlaceholderText("Search by customer name...")
+        
+        # Date range for orders
+        date_label = QLabel("Date:")
+        self.orders_start_date = QDateEdit()
+        self.orders_start_date.setCalendarPopup(True)
+        self.orders_start_date.setDate(QDate.currentDate().addDays(-7))  # Default to last week
+        
+        # Style the date edit to match app theme
+        self.orders_start_date.setStyleSheet("""
+            QDateEdit {
+                background-color: white;
+                color: #2c3e50;
+                border: 1px solid #ddd;
+                border-radius: 4px;
+                padding: 4px;
+            }
+            QCalendarWidget {
+                background-color: white;
+                color: #2c3e50;
+            }
+            QCalendarWidget QToolButton {
+                background-color: #3498db;
+                color: white;
+                border-radius: 2px;
+            }
+            QCalendarWidget QMenu {
+                background-color: white;
+                color: #2c3e50;
+            }
+            QCalendarWidget QSpinBox {
+                background-color: white;
+                color: #2c3e50;
+                selection-background-color: #3498db;
+                selection-color: white;
+            }
+            QCalendarWidget QAbstractItemView:enabled {
+                color: #2c3e50;
+                background-color: white;
+                selection-background-color: #3498db;
+                selection-color: white;
+            }
+            QCalendarWidget QAbstractItemView:disabled {
+                color: #ccc;
+            }
+        """)
+        
+        to_label = QLabel("to")
+        
+        self.orders_end_date = QDateEdit()
+        self.orders_end_date.setCalendarPopup(True)
+        self.orders_end_date.setDate(QDate.currentDate())  # Default to today
+        self.orders_end_date.setStyleSheet(self.orders_start_date.styleSheet())  # Use same style
+        
+        # Search button
+        search_btn = QPushButton("Search")
+        search_btn.setObjectName("action-button")
+        search_btn.clicked.connect(self.search_orders)
+        
+        # Refresh button
+        refresh_btn = QPushButton("Refresh Orders")
+        refresh_btn.setObjectName("action-button")
+        refresh_btn.clicked.connect(self.load_all_orders)
+        
+        # Add to layout
+        search_layout.addWidget(search_label)
+        search_layout.addWidget(self.orders_search_input, 3)
+        search_layout.addWidget(date_label)
+        search_layout.addWidget(self.orders_start_date)
+        search_layout.addWidget(to_label)
+        search_layout.addWidget(self.orders_end_date)
+        search_layout.addWidget(search_btn)
+        search_layout.addWidget(refresh_btn)
+        
         # Tab widget for different order statuses
         tabs = QTabWidget()
         
@@ -314,13 +454,8 @@ class RestaurantDashboard(QWidget):
         tabs.addTab(completed_tab, "Completed")
         tabs.addTab(cancelled_tab, "Cancelled")
         
-        # Add refresh button
-        refresh_btn = QPushButton("Refresh Orders")
-        refresh_btn.setObjectName("action-button")
-        refresh_btn.clicked.connect(self.load_all_orders)
-        
         layout.addWidget(header)
-        layout.addWidget(refresh_btn)
+        layout.addLayout(search_layout)
         layout.addWidget(tabs)
         
         # Store tab references
@@ -378,7 +513,7 @@ class RestaurantDashboard(QWidget):
         
         # Get all orders for this restaurant
         try:
-            orders = execute_query("""
+            restaurant_orders = execute_query("""
                 SELECT o.*, c.name as customer_name, c.phone as customer_phone
                 FROM orders o
                 JOIN customers c ON o.customer_id = c.customer_id
@@ -386,7 +521,7 @@ class RestaurantDashboard(QWidget):
                 ORDER BY o.order_time DESC
             """, (self.restaurant_id,))
             
-            if not orders:
+            if not restaurant_orders:
                 return
             
             # Clear "No orders" messages
@@ -408,7 +543,7 @@ class RestaurantDashboard(QWidget):
             }
             
             # Group by status
-            for order in orders:
+            for order in restaurant_orders:
                 # Map delivery_status to tab status
                 tab_status = status_map.get(order['delivery_status'], "New")
                 self.add_order_card(order, tab_status)
@@ -427,7 +562,14 @@ class RestaurantDashboard(QWidget):
         # Order header
         header_layout = QHBoxLayout()
         
-        order_id_label = QLabel(f"Order #{order['order_id']}")
+        # Use order_number if available, otherwise fall back to order_id
+        order_display = order.get('order_number', '')
+        if not order_display or order_display.strip() == '':
+            order_display = f"#{order['order_id']}"
+        else:
+            order_display = f"#{order_display}"
+            
+        order_id_label = QLabel(f"Order {order_display}")
         order_id_label.setObjectName("order-id")
         order_id_label.setFont(QFont("Arial", 16, QFont.Weight.Bold))
         
@@ -528,7 +670,6 @@ class RestaurantDashboard(QWidget):
                 reject_btn.clicked.connect(lambda: self.update_order_status(order['order_id'], "Cancelled"))
                 
                 buttons_layout.addWidget(accept_btn)
-                buttons_layout.addWidget(reject_btn)
             else:
                 # Already confirmed, just start preparing
                 prepare_btn = QPushButton("Start Preparing")
@@ -578,20 +719,26 @@ class RestaurantDashboard(QWidget):
             self.cancel_order(order_id)
             return
         
+        # Get order_number for display
+        order_info = execute_query("SELECT order_number FROM orders WHERE order_id = %s", (order_id,))
+        order_display = f"#{order_id}"
+        if order_info and order_info[0]['order_number']:
+            order_display = f"#{order_info[0]['order_number']}"
+        
         # Regular status update for non-cancelled orders
         try:
             query = "UPDATE orders SET delivery_status = %s WHERE order_id = %s"
             result = execute_query(query, (db_status, order_id), fetch=False)
             
             if result is not None:
-                print(f"Order #{order_id} status updated to {db_status} successfully")
-                QMessageBox.information(self, "Success", f"Order #{order_id} status updated to {new_status}")
+                print(f"Order {order_display} status updated to {db_status} successfully")
+                QMessageBox.information(self, "Success", f"Order {order_display} status updated to {new_status}")
                 # Refresh orders
                 self.load_all_orders()
                 # Also refresh dashboard stats when order status changes
                 self.load_dashboard_stats()
             else:
-                print(f"Failed to update Order #{order_id} status to {db_status}")
+                print(f"Failed to update Order {order_display} status to {db_status}")
                 QMessageBox.warning(self, "Error", "Failed to update order status")
         except Exception as e:
             print(f"Error updating order status: {e}")
@@ -1106,7 +1253,8 @@ class RestaurantDashboard(QWidget):
             self.recent_orders_table.setRowCount(0)
             
             recent_orders = execute_query("""
-                SELECT o.order_id, c.name as customer_name, o.total_amount, o.delivery_status, o.order_time
+                SELECT o.order_id, o.order_number, o.customer_id, o.order_time, o.delivery_status, o.total_amount, 
+                       c.name as customer_name, c.phone as customer_phone
                 FROM orders o
                 JOIN customers c ON o.customer_id = c.customer_id
                 WHERE o.restaurant_id = %s
@@ -1125,8 +1273,15 @@ class RestaurantDashboard(QWidget):
             self.recent_orders_table.setRowCount(len(recent_orders))
             
             for i, order in enumerate(recent_orders):
-                # Order ID with timestamp
-                order_id = QTableWidgetItem(f"#{order['order_id']}")
+                # Use order_number if available, otherwise fall back to order_id
+                order_display = order.get('order_number', '')
+                if not order_display or order_display.strip() == '':
+                    order_display = f"#{order['order_id']}"
+                else:
+                    order_display = f"#{order_display}"
+                
+                # Order number with timestamp
+                order_id = QTableWidgetItem(order_display)
                 order_time = order['order_time'].strftime("%m/%d %H:%M")
                 order_id.setToolTip(order_time)
                 
@@ -1170,6 +1325,12 @@ class RestaurantDashboard(QWidget):
     def cancel_order(self, order_id):
         """Cancel an order and restore stock"""
         try:
+            # Get order details for display
+            order_info = execute_query("SELECT order_number FROM orders WHERE order_id = %s", (order_id,))
+            order_display = f"#{order_id}"
+            if order_info and order_info[0]['order_number']:
+                order_display = f"#{order_info[0]['order_number']}"
+            
             # Get order items first
             items = execute_query("""
                 SELECT menu_id, quantity 
@@ -1205,7 +1366,7 @@ class RestaurantDashboard(QWidget):
             QMessageBox.information(
                 self,
                 "Order Cancelled",
-                "Order has been cancelled and stock quantities have been restored."
+                f"Order {order_display} has been cancelled and stock quantities have been restored."
             )
         except Exception as e:
             QMessageBox.critical(
@@ -1213,6 +1374,91 @@ class RestaurantDashboard(QWidget):
                 "Error",
                 f"Failed to cancel order: {str(e)}"
             )
+
+    def search_orders(self):
+        """Search orders with the provided criteria"""
+        search_term = self.orders_search_input.text().strip()
+        start_date = self.orders_start_date.date().toString("yyyy-MM-dd")
+        end_date = self.orders_end_date.date().toString("yyyy-MM-dd")
+        
+        # Clear existing orders
+        for status, layout in self.order_layouts.items():
+            # Clear layout
+            while layout.count():
+                item = layout.takeAt(0)
+                widget = item.widget()
+                if widget:
+                    widget.deleteLater()
+                    
+        # Add "No orders" message to each tab initially
+        for status, layout in self.order_layouts.items():
+            no_orders = QLabel(f"No {status.lower()} orders")
+            no_orders.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            layout.addWidget(no_orders)
+        
+        if not self.restaurant_id:
+            return
+        
+        # Get all orders for this restaurant with search filters
+        try:
+            # Build the query with parameters
+            query = """
+                SELECT o.*, c.name as customer_name, c.phone as customer_phone
+                FROM orders o
+                JOIN customers c ON o.customer_id = c.customer_id
+                WHERE o.restaurant_id = %s
+            """
+            params = [self.restaurant_id]
+            
+            # Add date filters if provided
+            if start_date:
+                query += " AND DATE(o.order_time) >= %s"
+                params.append(start_date)
+            
+            if end_date:
+                query += " AND DATE(o.order_time) <= %s"
+                params.append(end_date)
+            
+            # Add customer name search if provided
+            if search_term:
+                query += " AND c.name LIKE %s"
+                params.append(f"%{search_term}%")
+            
+            # Add order by clause
+            query += " ORDER BY o.order_time DESC"
+            
+            orders = execute_query(query, tuple(params))
+            
+            if not orders:
+                return
+            
+            # Clear "No orders" messages
+            for status, layout in self.order_layouts.items():
+                while layout.count():
+                    item = layout.takeAt(0)
+                    widget = item.widget()
+                    if widget:
+                        widget.deleteLater()
+            
+            # Map order statuses to tab names
+            status_map = {
+                "Pending": "New",
+                "Confirmed": "New",
+                "Preparing": "Preparing", 
+                "On Delivery": "Ready for Pickup",
+                "Delivered": "Completed",
+                "Cancelled": "Cancelled"
+            }
+            
+            # Group by status
+            for order in orders:
+                # Map delivery_status to tab status
+                tab_status = status_map.get(order['delivery_status'], "New")
+                self.add_order_card(order, tab_status)
+                
+        except Exception as e:
+            print(f"Error searching orders: {e}")
+            QMessageBox.critical(self, "Error", f"Failed to search orders: {str(e)}")
 
 
 class MenuItemDialog(QDialog):
