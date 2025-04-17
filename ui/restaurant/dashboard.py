@@ -572,7 +572,13 @@ class RestaurantDashboard(QWidget):
         # Get the database enum value
         db_status = status_db_map.get(new_status, new_status)
         
-        # Update order status in database
+        # Special handling for cancelled orders to restore stock
+        if new_status == "Cancelled":
+            # Use cancel_order method which handles both status update and stock restoration
+            self.cancel_order(order_id)
+            return
+        
+        # Regular status update for non-cancelled orders
         try:
             query = "UPDATE orders SET delivery_status = %s WHERE order_id = %s"
             result = execute_query(query, (db_status, order_id), fetch=False)
@@ -1183,15 +1189,18 @@ class RestaurantDashboard(QWidget):
                     WHERE menu_id = %s
                 """, (item['quantity'], item['quantity'], item['menu_id']), fetch=False)
             
-            # Update order status
+            # Update order status - Fixed column name from order_status to delivery_status
             execute_query("""
                 UPDATE orders 
-                SET order_status = 'Cancelled' 
+                SET delivery_status = 'Cancelled' 
                 WHERE order_id = %s
             """, (order_id,), fetch=False)
             
             # Refresh orders
             self.load_all_orders()
+            
+            # Also refresh dashboard stats
+            self.load_dashboard_stats()
             
             QMessageBox.information(
                 self,
