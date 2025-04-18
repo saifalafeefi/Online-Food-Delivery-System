@@ -1,6 +1,6 @@
 # Online Food Delivery System
 
-![Version](https://img.shields.io/badge/version-2.8.1-blue.svg)
+![Version](https://img.shields.io/badge/version-2.8.2-blue.svg)
 
 A comprehensive food delivery platform that connects customers, restaurants, and delivery personnel, similar to commercial services like DoorDash, Deliveroo, and Talabat. The application features multiple interfaces for different user roles and real-time order tracking.
 

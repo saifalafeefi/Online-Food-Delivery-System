@@ -24,7 +24,7 @@ class DeliveryDashboard(QWidget):
         # Set up auto-refresh timer
         self.refresh_timer = QTimer(self)
         self.refresh_timer.timeout.connect(self.auto_refresh)
-        self.refresh_timer.start(10000)  # Refresh every 10 seconds
+        self.refresh_timer.start(500)  # Refresh every 0.5 seconds
         
         self.initUI()
         # Load delivery person info after UI is initialized
@@ -1200,10 +1200,20 @@ class DeliveryDashboard(QWidget):
     
     def auto_refresh(self):
         """Automatically refresh data based on current page"""
-        current_widget = self.content_area.currentWidget()
-        if current_widget == self.new_orders_page:
-            self.load_new_orders()
-            print("Auto-refreshed new orders")
-        elif current_widget == self.active_deliveries_page:
-            self.load_active_deliveries()
-            print("Auto-refreshed active deliveries") 
+        try:
+            # Skip refresh if mouse button is pressed to prevent click interference
+            from PySide6.QtWidgets import QApplication
+            from PySide6.QtCore import Qt
+            
+            if QApplication.mouseButtons() != Qt.MouseButton.NoButton:
+                return
+                
+            current_widget = self.content_area.currentWidget()
+            if current_widget == self.new_orders_page:
+                self.load_new_orders()
+            elif current_widget == self.active_deliveries_page:
+                self.load_active_deliveries()
+        except Exception as e:
+            # Silent exception handling for auto-refresh
+            print(f"Auto-refresh error in delivery dashboard: {e}")
+            # Don't show error to user since this runs automatically 

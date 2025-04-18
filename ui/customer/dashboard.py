@@ -2,9 +2,10 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QPushButton,
                              QHBoxLayout, QScrollArea, QFrame, QGridLayout, 
                              QSizePolicy, QSpacerItem, QStackedWidget, QMessageBox,
                              QTableWidget, QTableWidgetItem, QDialog, QFormLayout,
-                             QLineEdit, QComboBox, QHeaderView, QSlider, QGroupBox, QTextEdit)
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QFont, QIcon, QPixmap
+                             QLineEdit, QComboBox, QHeaderView, QSlider, QGroupBox, QTextEdit,
+                             QSpinBox, QProgressBar, QMenu, QCheckBox, QRadioButton)
+from PySide6.QtCore import Qt, Signal, QSize, QTimer
+from PySide6.QtGui import QFont, QIcon, QPixmap, QCursor
 import os
 
 from ui.customer.restaurant_view import RestaurantView
@@ -120,6 +121,12 @@ class CustomerDashboard(QWidget):
         self.cart_items = []  # List of dictionaries containing menu_item and quantity
         self.customer_id = None
         self._source_call = None  # Track the source of method calls
+        
+        # Set up auto-refresh timer for real-time updates
+        self.refresh_timer = QTimer(self)
+        self.refresh_timer.timeout.connect(self.auto_refresh)
+        self.refresh_timer.start(500)  # Refresh every 0.5 seconds
+        
         self.initUI()
         # Load customer profile data after UI is initialized
         self.load_customer_profile()
@@ -2188,20 +2195,58 @@ class CustomerDashboard(QWidget):
     
     def remove_favorite(self, favorite_id):
         """Remove a restaurant from favorites"""
-        reply = QMessageBox.question(
-            self, "Remove from Favorites", 
-            "Are you sure you want to remove this restaurant from your favorites?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-        )
-        
-        if reply == QMessageBox.StandardButton.Yes:
-            delete_query = "DELETE FROM favorites WHERE favorite_id = %s"
-            result = execute_query(delete_query, (favorite_id,), fetch=False)
+        try:
+            # Check if the favorite exists
+            query = """
+                DELETE FROM favorites
+                WHERE favorite_id = %s AND customer_id = %s
+            """
+            result = execute_query(query, (favorite_id, self.customer_id), fetch=False)
             
             if result is not None:
-                self.load_favorites()  # Refresh the favorites page
+                # Refresh favorites
+                self.load_favorites()
+                QMessageBox.information(self, "Success", "Restaurant removed from favorites.")
             else:
-                QMessageBox.warning(self, "Error", 
-                                   "Could not remove restaurant from favorites. Please try again.")
+                QMessageBox.warning(self, "Error", "Failed to remove restaurant from favorites.")
+                
+        except Exception as e:
+            print(f"Error removing favorite: {e}")
+            QMessageBox.critical(self, "Error", f"An error occurred: {str(e)}")
+    
+    def auto_refresh(self):
+        """Automatically refresh data based on current page"""
+        try:
+            # Skip refresh if mouse button is pressed to prevent click interference
+            from PySide6.QtWidgets import QApplication
+            from PySide6.QtCore import Qt
+            
+            if QApplication.mouseButtons() != Qt.MouseButton.NoButton:
+                return
+                
+            current_widget = self.content_area.currentWidget()
+            
+            # Only refresh orders page for real-time updates
+            if current_widget == self.orders_page:
+                # Get currently selected order ID if in details view
+                current_order_id = None
+                for order_id, frame in getattr(self, '_order_frames', {}).items():
+                    # Check if any order details are expanded
+                    if hasattr(frame, '_details_visible') and frame._details_visible:
+                        current_order_id = order_id
+                        break
+                
+                # Refresh orders list
+                self.load_orders()
+                
+                # Re-expand details if there was an expanded order
+                if current_order_id:
+                    if hasattr(self, '_order_frames') and current_order_id in self._order_frames:
+                        # Expand the order details again
+                        self.view_order_details(current_order_id)
+        except Exception as e:
+            # Silent exception handling for auto-refresh
+            print(f"Auto-refresh error in customer dashboard: {e}")
+            # Don't show error to user since this runs automatically
 
 # ... rest of file unchanged ... 

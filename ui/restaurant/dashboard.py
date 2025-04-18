@@ -3,9 +3,10 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QPushButton,
                              QSizePolicy, QSpacerItem, QStackedWidget, QTableWidget,
                              QTableWidgetItem, QHeaderView, QDialog, QFormLayout,
                              QLineEdit, QComboBox, QMessageBox, QSpinBox, QTextEdit,
-                             QDoubleSpinBox, QTabWidget, QDateEdit)
-from PySide6.QtCore import Qt, Signal, QDate
-from PySide6.QtGui import QFont, QIcon
+                             QDoubleSpinBox, QTabWidget, QDateEdit, QProgressBar,
+                             QMenu)
+from PySide6.QtCore import Qt, Signal, QSize, QDate, QTimer
+from PySide6.QtGui import QFont, QIcon, QPixmap, QColor
 from db_utils import execute_query
 import matplotlib.pyplot as plt
 import numpy as np
@@ -29,6 +30,12 @@ class RestaurantDashboard(QWidget):
             "Completed": None,
             "Cancelled": None
         }
+        
+        # Set up auto-refresh timer for real-time updates
+        self.refresh_timer = QTimer(self)
+        self.refresh_timer.timeout.connect(self.auto_refresh)
+        self.refresh_timer.start(500)  # Refresh every 0.5 seconds
+        
         self.initUI()
         # Load restaurant profile after UI initialization
         self.load_restaurant_profile()
@@ -1901,7 +1908,7 @@ class RestaurantDashboard(QWidget):
                 widget = item.widget()
                 if widget:
                     widget.deleteLater()
-                    
+        
         # Add "No orders" message to each tab initially
         for status, layout in self.order_layouts.items():
             no_orders = QLabel(f"No {status.lower()} orders")
@@ -1916,9 +1923,9 @@ class RestaurantDashboard(QWidget):
             # Build the query with parameters
             query = """
                 SELECT o.*, c.name as customer_name, c.phone as customer_phone
-                FROM orders o
-                JOIN customers c ON o.customer_id = c.customer_id
-                WHERE o.restaurant_id = %s
+            FROM orders o
+            JOIN customers c ON o.customer_id = c.customer_id
+            WHERE o.restaurant_id = %s
             """
             params = [self.restaurant_id]
             
@@ -1971,6 +1978,30 @@ class RestaurantDashboard(QWidget):
         except Exception as e:
             print(f"Error searching orders: {e}")
             QMessageBox.critical(self, "Error", f"Failed to search orders: {str(e)}")
+    
+    def auto_refresh(self):
+        """Automatically refresh data based on current page"""
+        try:
+            # Skip refresh if mouse button is pressed to prevent click interference
+            from PySide6.QtWidgets import QApplication
+            from PySide6.QtCore import Qt
+            
+            if QApplication.mouseButtons() != Qt.MouseButton.NoButton:
+                return
+                
+            current_widget = self.content_area.currentWidget()
+            
+            # Only refresh certain pages that need real-time updates
+            if current_widget == self.orders_page:
+                # Refresh all orders
+                self.load_all_orders()
+            elif current_widget == self.dashboard_page:
+                # Refresh dashboard stats
+                self.load_dashboard_stats()
+        except Exception as e:
+            # Silent exception handling for auto-refresh
+            print(f"Auto-refresh error in restaurant dashboard: {e}")
+            # Don't show error to user since this runs automatically
 
 
 class MenuItemDialog(QDialog):

@@ -3,9 +3,11 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QPushButton,
                             QSizePolicy, QSpacerItem, QStackedWidget, QTableWidget,
                             QTableWidgetItem, QHeaderView, QDialog, QFormLayout,
                             QLineEdit, QComboBox, QMessageBox, QRadioButton, QGroupBox,
-                            QDateEdit, QTabWidget, QCheckBox, QProgressDialog, QApplication)
-from PySide6.QtCore import Qt, Signal, QDate, QDateTime
-from PySide6.QtGui import QFont, QIcon, QPainter
+                            QDateEdit, QTabWidget, QCheckBox, QProgressDialog, QApplication,
+                            QProgressBar, QMenu, QSpinBox, QTextEdit, QFileDialog, 
+                            QListWidget, QListWidgetItem)
+from PySide6.QtCore import Qt, Signal, QDate, QDateTime, QTimer
+from PySide6.QtGui import QFont, QIcon, QPainter, QPixmap
 # Using matplotlib for charts
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
@@ -13,6 +15,7 @@ from matplotlib.figure import Figure
 import numpy as np
 import time
 import re
+import os
 
 from db_utils import execute_query
 
@@ -22,6 +25,12 @@ class AdminDashboard(QWidget):
     def __init__(self, user):
         super().__init__()
         self.user = user
+        
+        # Set up auto-refresh timer for real-time updates
+        self.refresh_timer = QTimer(self)
+        self.refresh_timer.timeout.connect(self.auto_refresh)
+        self.refresh_timer.start(500)  # Refresh every 0.5 seconds
+        
         self.initUI()
     
     def initUI(self):
@@ -2819,7 +2828,38 @@ class AdminDashboard(QWidget):
         
         if reply == QMessageBox.StandardButton.Yes:
             self.logout_requested.emit()
-
+            
+    def auto_refresh(self):
+        """Automatically refresh data based on current page"""
+        try:
+            # Skip refresh if mouse button is pressed to prevent click interference
+            if QApplication.mouseButtons() != Qt.MouseButton.NoButton:
+                return
+                
+            current_widget = self.content_area.currentWidget()
+            
+            # Refresh different pages with real-time data
+            if current_widget == self.dashboard_page:
+                # We'll just update the orders stats which change frequently
+                try:
+                    today_orders = execute_query("SELECT COUNT(*) as count FROM orders WHERE DATE(order_time) = CURDATE()")
+                    if today_orders and hasattr(self, 'today_orders_value'):
+                        self.today_orders_value.setText(str(today_orders[0]['count']))
+                except Exception as e:
+                    print(f"Dashboard auto-refresh error: {e}")
+            elif current_widget == self.orders_page:
+                # Only refresh orders if no search is being performed
+                if hasattr(self, 'order_search_input') and not self.order_search_input.text().strip():
+                    self.load_orders(force_refresh=True)
+            elif current_widget == self.delivery_page:
+                # Check if we need to refresh active deliveries
+                if hasattr(self, 'status_filter') and self.status_filter.currentText() in ["All Status", "On Delivery"]:
+                    self.load_delivery_personnel(self.status_filter.currentText())
+        except Exception as e:
+            # Silent exception handling for auto-refresh
+            print(f"Auto-refresh error in admin dashboard: {e}")
+            # Don't show error to user since this runs automatically
+    
     # Helper methods for displaying messages in tables
     def display_db_error_message(self, table, message="Database connection error. Please check your database connection."):
         """Display an error message in a table when database operations fail"""
