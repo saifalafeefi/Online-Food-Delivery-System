@@ -1784,7 +1784,11 @@ class AdminDashboard(QWidget):
     def refresh_analytics(self):
         """Refresh all analytics data based on selected date range"""
         start_date = self.start_date.date().toString("yyyy-MM-dd")
-        end_date = self.end_date.date().toString("yyyy-MM-dd")
+        
+        # Get end date and add 1 day to make it inclusive of orders on the end date
+        end_date_obj = self.end_date.date()
+        end_date_obj = end_date_obj.addDays(1)  # Add one day to include orders on the selected end date
+        end_date = end_date_obj.toString("yyyy-MM-dd")
         
         try:
             # Get key metrics

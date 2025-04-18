@@ -1203,7 +1203,11 @@ class RestaurantDashboard(QWidget):
             return
             
         start_date = self.reports_start_date.date().toString("yyyy-MM-dd")
-        end_date = self.reports_end_date.date().toString("yyyy-MM-dd")
+        
+        # Get end date and add 1 day to make it inclusive of orders on the end date
+        end_date_obj = self.reports_end_date.date()
+        end_date_obj = end_date_obj.addDays(1)  # Add one day to include orders on the selected end date
+        end_date = end_date_obj.toString("yyyy-MM-dd")
         
         try:
             # Get key metrics for this restaurant

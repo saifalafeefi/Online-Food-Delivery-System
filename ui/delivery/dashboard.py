@@ -1167,10 +1167,11 @@ class DeliveryDashboard(QWidget):
     def complete_delivery(self, order_id):
         """Mark a delivery as completed"""
         try:
-            # Update the order status to "Delivered"
+            # Update the order status to "Delivered" and set actual_delivery_time
             query = """
                 UPDATE orders 
-                SET delivery_status = %s 
+                SET delivery_status = %s, 
+                    actual_delivery_time = NOW()
                 WHERE order_id = %s
             """
             result = execute_query(query, ("Delivered", order_id), fetch=False)
