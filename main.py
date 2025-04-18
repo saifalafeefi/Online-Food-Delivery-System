@@ -127,6 +127,7 @@ if __name__ == "__main__":
             border: 1px solid #ddd;
             border-radius: 4px;
             background-color: white;
+            color: black;
         }
         QLineEdit:focus, QComboBox:focus, QSpinBox:focus {
             border: 1px solid #3498db;
