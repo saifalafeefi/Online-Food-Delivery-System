@@ -7,6 +7,10 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QPushButton,
 from PySide6.QtCore import Qt, Signal, QDate
 from PySide6.QtGui import QFont, QIcon
 from db_utils import execute_query
+import matplotlib.pyplot as plt
+import numpy as np
+from matplotlib.backends.backend_qt5agg import FigureCanvas
+from matplotlib.figure import Figure
 
 class RestaurantDashboard(QWidget):
     logout_requested = Signal()
@@ -17,6 +21,7 @@ class RestaurantDashboard(QWidget):
         self.restaurant_id = None
         self.restaurant_data = None
         self._source_call = None  # Track source of method calls
+        self.restaurant_name_label = None  # Reference to the restaurant name label
         self.order_layouts = {
             "New": None,
             "Preparing": None,
@@ -29,6 +34,8 @@ class RestaurantDashboard(QWidget):
         self.load_restaurant_profile()
         if self.restaurant_data:
             self.load_profile_data()
+            # Update restaurant name in the sidebar
+            self.update_restaurant_name()
             # Load dashboard stats if restaurant exists
             self.load_dashboard_stats()
             # Start with dashboard
@@ -36,6 +43,11 @@ class RestaurantDashboard(QWidget):
         else:
             # Only show profile setup if no restaurant exists
             self.show_profile_setup()
+    
+    def update_restaurant_name(self):
+        """Update the restaurant name in the sidebar"""
+        if self.restaurant_name_label and self.restaurant_data and 'name' in self.restaurant_data:
+            self.restaurant_name_label.setText(self.restaurant_data['name'])
     
     def load_restaurant_profile(self):
         # Get the restaurant profile for this user
@@ -47,6 +59,9 @@ class RestaurantDashboard(QWidget):
         if result:
             self.restaurant_data = result[0]
             self.restaurant_id = self.restaurant_data['restaurant_id']
+            
+            # Update restaurant name in the sidebar
+            self.update_restaurant_name()
             
             # Check if restaurant is suspended
             if 'is_active' in self.restaurant_data and not self.restaurant_data['is_active']:
@@ -126,19 +141,19 @@ class RestaurantDashboard(QWidget):
         user_info.setObjectName("user-info")
         user_info_layout = QVBoxLayout(user_info)
         
+        # Initialize with a placeholder name
         restaurant_name = "Your Restaurant"
-        if self.restaurant_data:
-            restaurant_name = self.restaurant_data['name']
         
         welcome_label = QLabel(f"Welcome, {self.user.username}")
         welcome_label.setObjectName("welcome-label")
         welcome_label.setFont(QFont("Arial", 16, QFont.Weight.Bold))
         
-        restaurant_label = QLabel(restaurant_name)
-        restaurant_label.setObjectName("restaurant-name")
+        # Create and store the restaurant name label
+        self.restaurant_name_label = QLabel(restaurant_name)
+        self.restaurant_name_label.setObjectName("restaurant-name")
         
         user_info_layout.addWidget(welcome_label)
-        user_info_layout.addWidget(restaurant_label)
+        user_info_layout.addWidget(self.restaurant_name_label)
         sidebar_layout.addWidget(user_info)
         
         # Navigation buttons
@@ -870,20 +885,507 @@ class RestaurantDashboard(QWidget):
         page = QWidget()
         layout = QVBoxLayout(page)
         
-        # Header
-        header = QLabel("Reports and Analytics")
+        # Create a scroll area for the entire content - VERTICAL ONLY
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setFrameShape(QFrame.Shape.NoFrame)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        
+        # Create a widget to hold all the content that will be scrollable
+        content_widget = QWidget()
+        scroll_layout = QVBoxLayout(content_widget)
+        scroll_layout.setContentsMargins(10, 10, 10, 10)
+        scroll_layout.setSpacing(15)
+        
+        # Header section
+        header = QLabel("Reports & Analytics")
+        header.setFont(QFont("Arial", 24, QFont.Weight.Bold))
         header.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        header.setFont(QFont("Arial", 20))
+        header.setStyleSheet("color: #ecf0f1; background-color: #2c3e50; padding: 10px; border-radius: 4px;")
         
-        # Placeholder content
-        placeholder = QLabel("Reports functionality will be available soon!")
-        placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        # Date range selector
+        date_range_layout = QHBoxLayout()
+        date_range_label = QLabel("Date Range:")
+        date_range_label.setStyleSheet("color: #2c3e50;")
         
-        layout.addWidget(header)
-        layout.addWidget(placeholder)
-        layout.addStretch()
+        # Create and style start date picker
+        self.reports_start_date = QDateEdit()
+        self.reports_start_date.setCalendarPopup(True)
+        self.reports_start_date.setDate(QDate.currentDate().addDays(-30))  # Default to last 30 days
+        self.reports_start_date.setObjectName("date-picker")
+        self.reports_start_date.setFixedWidth(140)
+        self.reports_start_date.setButtonSymbols(QDateEdit.ButtonSymbols.NoButtons)
+        self.reports_start_date.setDisplayFormat("dd MMM yyyy")
+        
+        # Create and style end date picker
+        self.reports_end_date = QDateEdit()
+        self.reports_end_date.setCalendarPopup(True)
+        self.reports_end_date.setDate(QDate.currentDate())
+        self.reports_end_date.setObjectName("date-picker")
+        self.reports_end_date.setFixedWidth(140)
+        self.reports_end_date.setButtonSymbols(QDateEdit.ButtonSymbols.NoButtons)
+        self.reports_end_date.setDisplayFormat("dd MMM yyyy")
+        
+        # From-To separator label with styling
+        date_separator = QLabel("to")
+        date_separator.setStyleSheet("color: #2c3e50; margin: 0 10px;")
+        
+        refresh_btn = QPushButton("Refresh Data")
+        refresh_btn.setObjectName("action-button")
+        refresh_btn.clicked.connect(self.refresh_restaurant_analytics)
+        
+        date_range_layout.addWidget(date_range_label)
+        date_range_layout.addWidget(self.reports_start_date)
+        date_range_layout.addWidget(date_separator)
+        date_range_layout.addWidget(self.reports_end_date)
+        date_range_layout.addStretch()
+        date_range_layout.addWidget(refresh_btn)
+        
+        # Key metrics cards
+        metrics_layout = QHBoxLayout()
+        
+        # Total Orders Card
+        total_orders_card = QFrame()
+        total_orders_card.setObjectName("metric-card")
+        total_orders_layout = QVBoxLayout(total_orders_card)
+        self.report_total_orders_label = QLabel("0")
+        self.report_total_orders_label.setFont(QFont("Arial", 24, QFont.Weight.Bold))
+        total_orders_layout.addWidget(QLabel("Total Orders"))
+        total_orders_layout.addWidget(self.report_total_orders_label)
+        
+        # Total Revenue Card
+        revenue_card = QFrame()
+        revenue_card.setObjectName("metric-card")
+        revenue_layout = QVBoxLayout(revenue_card)
+        self.report_revenue_label = QLabel("AED 0.00")
+        self.report_revenue_label.setFont(QFont("Arial", 24, QFont.Weight.Bold))
+        revenue_layout.addWidget(QLabel("Total Revenue"))
+        revenue_layout.addWidget(self.report_revenue_label)
+        
+        # Average Order Value Card
+        aov_card = QFrame()
+        aov_card.setObjectName("metric-card")
+        aov_layout = QVBoxLayout(aov_card)
+        self.report_aov_label = QLabel("AED 0.00")
+        self.report_aov_label.setFont(QFont("Arial", 24, QFont.Weight.Bold))
+        aov_layout.addWidget(QLabel("Average Order Value"))
+        aov_layout.addWidget(self.report_aov_label)
+        
+        # Average Delivery Time Card
+        delivery_time_card = QFrame()
+        delivery_time_card.setObjectName("metric-card")
+        delivery_time_layout = QVBoxLayout(delivery_time_card)
+        self.report_delivery_time_label = QLabel("0 min")
+        self.report_delivery_time_label.setFont(QFont("Arial", 24, QFont.Weight.Bold))
+        delivery_time_layout.addWidget(QLabel("Avg. Delivery Time"))
+        delivery_time_layout.addWidget(self.report_delivery_time_label)
+        
+        metrics_layout.addWidget(total_orders_card)
+        metrics_layout.addWidget(revenue_card)
+        metrics_layout.addWidget(aov_card)
+        metrics_layout.addWidget(delivery_time_card)
+        
+        # Charts section
+        charts_layout = QHBoxLayout()
+        
+        # Orders by Status Chart
+        status_chart_card = QFrame()
+        status_chart_card.setObjectName("chart-card")
+        status_chart_layout = QVBoxLayout(status_chart_card)
+        status_chart_layout.addWidget(QLabel("Orders by Status"))
+        
+        # Create a frame for the chart with its own layout
+        self.report_status_chart = QFrame()
+        self.report_status_chart.setMinimumHeight(300)
+        chart_layout = QVBoxLayout(self.report_status_chart)
+        chart_layout.setContentsMargins(0, 0, 0, 0)
+        status_chart_layout.addWidget(self.report_status_chart)
+        
+        # Revenue Trend Chart
+        revenue_chart_card = QFrame()
+        revenue_chart_card.setObjectName("chart-card")
+        revenue_chart_layout = QVBoxLayout(revenue_chart_card)
+        revenue_chart_layout.addWidget(QLabel("Revenue Trend"))
+        
+        # Create a frame for the chart with its own layout
+        self.report_revenue_chart = QFrame()
+        self.report_revenue_chart.setMinimumHeight(300)
+        chart_layout = QVBoxLayout(self.report_revenue_chart)
+        chart_layout.setContentsMargins(0, 0, 0, 0)
+        revenue_chart_layout.addWidget(self.report_revenue_chart)
+        
+        charts_layout.addWidget(status_chart_card)
+        charts_layout.addWidget(revenue_chart_card)
+        
+        # Detailed Reports Section
+        reports_tabs = QTabWidget()
+        reports_tabs.setMinimumHeight(300)
+        
+        # Top Menu Items Tab
+        menu_tab = QWidget()
+        menu_layout = QVBoxLayout(menu_tab)
+        self.top_menu_items_table = QTableWidget()
+        self.top_menu_items_table.setColumnCount(5)
+        self.top_menu_items_table.setHorizontalHeaderLabels(["Dish Name", "Orders", "Revenue", "Average Rating", "Stock Level"])
+        self.top_menu_items_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        menu_layout.addWidget(self.top_menu_items_table)
+        
+        # Delivery Performance Tab
+        delivery_tab = QWidget()
+        delivery_layout = QVBoxLayout(delivery_tab)
+        self.delivery_performance_table = QTableWidget()
+        self.delivery_performance_table.setColumnCount(5)
+        self.delivery_performance_table.setHorizontalHeaderLabels(["Delivery Person", "Deliveries", "Rating", "Avg. Time", "On-time Rate"])
+        self.delivery_performance_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        delivery_layout.addWidget(self.delivery_performance_table)
+        
+        # Customer Insights Tab
+        customer_tab = QWidget()
+        customer_layout = QVBoxLayout(customer_tab)
+        self.customer_insights_table = QTableWidget()
+        self.customer_insights_table.setColumnCount(5)
+        self.customer_insights_table.setHorizontalHeaderLabels(["Customer", "Orders", "Total Spent", "Avg. Order Value", "Last Order"])
+        self.customer_insights_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        customer_layout.addWidget(self.customer_insights_table)
+        
+        reports_tabs.addTab(menu_tab, "Top Menu Items")
+        reports_tabs.addTab(delivery_tab, "Delivery Performance")
+        reports_tabs.addTab(customer_tab, "Top Customers")
+        
+        # Add all sections to scroll layout
+        scroll_layout.addWidget(header)
+        scroll_layout.addLayout(date_range_layout)
+        scroll_layout.addLayout(metrics_layout)
+        scroll_layout.addLayout(charts_layout)
+        scroll_layout.addWidget(reports_tabs)
+        
+        # Set scroll area widget and add to main layout
+        scroll_area.setWidget(content_widget)
+        layout.addWidget(scroll_area)
+        
+        # Set styles
+        page.setStyleSheet("""
+            QFrame#metric-card {
+                background-color: #34495e;
+                border-radius: 8px;
+                padding: 15px;
+                min-width: 200px;
+            }
+            QFrame#chart-card {
+                background-color: #34495e;
+                border-radius: 8px;
+                padding: 15px;
+                min-width: 400px;
+            }
+            QLabel {
+                color: white;
+            }
+            QTableWidget {
+                background-color: #34495e;
+                color: white;
+                gridline-color: #7f8c8d;
+                alternate-background-color: #2c3e50;
+            }
+            QHeaderView::section {
+                background-color: #2c3e50;
+                color: white;
+                padding: 5px;
+                border: none;
+                font-weight: bold;
+            }
+            QTabWidget::pane {
+                border: 1px solid #7f8c8d;
+                background-color: #34495e;
+            }
+            QTabBar::tab {
+                background-color: #2c3e50;
+                color: white;
+                padding: 8px 15px;
+                border: 1px solid #7f8c8d;
+                border-bottom: none;
+                border-top-left-radius: 4px;
+                border-top-right-radius: 4px;
+            }
+            QTabBar::tab:selected {
+                background-color: #34495e;
+            }
+            QScrollArea {
+                border: none;
+                background-color: transparent;
+            }
+            QScrollBar:vertical {
+                background-color: #2c3e50;
+                width: 10px;
+                margin: 0px;
+            }
+            QScrollBar::handle:vertical {
+                background-color: #3498db;
+                border-radius: 5px;
+                min-height: 20px;
+            }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+                height: 0px;
+            }
+            QDateEdit#date-picker {
+                background-color: #34495e;
+                color: white;
+                border: 1px solid #7f8c8d;
+                border-radius: 4px;
+                padding: 5px 10px;
+                min-height: 25px;
+            }
+            QDateEdit#date-picker::drop-down {
+                subcontrol-origin: padding;
+                subcontrol-position: right center;
+                width: 20px;
+                border-left: 1px solid #7f8c8d;
+                border-top-right-radius: 3px;
+                border-bottom-right-radius: 3px;
+            }
+            QDateEdit#date-picker::down-arrow {
+                image: url(ui/icons/calendar.png);
+                width: 16px;
+                height: 16px;
+            }
+            QDateEdit#date-picker:hover {
+                background-color: #3d5a74;
+                border: 1px solid #3498db;
+            }
+            QDateEdit#date-picker:focus {
+                border: 2px solid #3498db;
+            }
+            QCalendarWidget {
+                background-color: #34495e;
+                color: white;
+            }
+            QCalendarWidget QWidget {
+                alternate-background-color: #2c3e50;
+            }
+            QCalendarWidget QAbstractItemView:enabled {
+                color: white;
+                background-color: #34495e;
+                selection-background-color: #3498db;
+                selection-color: white;
+            }
+            QCalendarWidget QToolButton {
+                color: white;
+                background-color: #2c3e50;
+                border-radius: 3px;
+            }
+            QCalendarWidget QToolButton:hover {
+                background-color: #3498db;
+            }
+            QPushButton#action-button {
+                background-color: #3498db;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                padding: 8px 15px;
+                font-weight: bold;
+            }
+            QPushButton#action-button:hover {
+                background-color: #2980b9;
+            }
+            QPushButton#action-button:pressed {
+                background-color: #1c6ea4;
+            }
+        """)
+        
+        # Load initial data
+        if self.restaurant_id:
+            self.refresh_restaurant_analytics()
         
         return page
+        
+    def refresh_restaurant_analytics(self):
+        """Refresh all restaurant analytics data based on selected date range"""
+        if not self.restaurant_id:
+            return
+            
+        start_date = self.reports_start_date.date().toString("yyyy-MM-dd")
+        end_date = self.reports_end_date.date().toString("yyyy-MM-dd")
+        
+        try:
+            # Get key metrics for this restaurant
+            metrics_query = """
+                SELECT 
+                    COUNT(*) as total_orders,
+                    SUM(total_amount) as total_revenue,
+                    AVG(total_amount) as avg_order_value,
+                    AVG(TIMESTAMPDIFF(MINUTE, order_time, actual_delivery_time)) as avg_delivery_time
+                FROM orders 
+                WHERE restaurant_id = %s
+                AND order_time BETWEEN %s AND %s
+            """
+            metrics = execute_query(metrics_query, (self.restaurant_id, start_date, end_date))
+            
+            if metrics and metrics[0]:
+                self.report_total_orders_label.setText(str(metrics[0]['total_orders'] or 0))
+                self.report_revenue_label.setText(f"AED {float(metrics[0]['total_revenue'] or 0):.2f}")
+                self.report_aov_label.setText(f"AED {float(metrics[0]['avg_order_value'] or 0):.2f}")
+                self.report_delivery_time_label.setText(f"{int(metrics[0]['avg_delivery_time'] or 0)} min")
+            
+            # Get orders by status for this restaurant
+            status_query = """
+                SELECT delivery_status, COUNT(*) as count
+                FROM orders
+                WHERE restaurant_id = %s
+                AND order_time BETWEEN %s AND %s
+                GROUP BY delivery_status
+            """
+            status_data = execute_query(status_query, (self.restaurant_id, start_date, end_date))
+            
+            # Get revenue trend for this restaurant
+            revenue_query = """
+                SELECT DATE(order_time) as date, SUM(total_amount) as revenue
+                FROM orders
+                WHERE restaurant_id = %s
+                AND order_time BETWEEN %s AND %s
+                GROUP BY DATE(order_time)
+                ORDER BY date
+            """
+            revenue_data = execute_query(revenue_query, (self.restaurant_id, start_date, end_date))
+            
+            # Clear previous charts
+            for i in reversed(range(self.report_status_chart.layout().count())): 
+                widget = self.report_status_chart.layout().itemAt(i).widget()
+                if widget:
+                    widget.setParent(None)
+            
+            for i in reversed(range(self.report_revenue_chart.layout().count())): 
+                widget = self.report_revenue_chart.layout().itemAt(i).widget()
+                if widget:
+                    widget.setParent(None)
+            
+            # Create status pie chart with matplotlib
+            if status_data:
+                status_fig = Figure(figsize=(5, 4), dpi=100)
+                status_canvas = FigureCanvas(status_fig)
+                ax = status_fig.add_subplot(111)
+                
+                labels = [item['delivery_status'] for item in status_data]
+                sizes = [item['count'] for item in status_data]
+                
+                # Use a colorful palette
+                colors = plt.cm.Paired(np.arange(len(labels))/len(labels))
+                
+                ax.pie(sizes, labels=labels, autopct='%1.1f%%', 
+                      startangle=90, colors=colors)
+                ax.axis('equal')  # Equal aspect ratio ensures circular pie
+                
+                # Add the canvas to the layout
+                self.report_status_chart.layout().addWidget(status_canvas)
+                status_fig.tight_layout()
+                status_canvas.draw()
+            
+            # Create revenue trend chart with matplotlib
+            if revenue_data:
+                revenue_fig = Figure(figsize=(5, 4), dpi=100)
+                revenue_canvas = FigureCanvas(revenue_fig)
+                ax = revenue_fig.add_subplot(111)
+                
+                dates = [item['date'] for item in revenue_data]
+                revenue_values = [float(item['revenue']) for item in revenue_data]
+                
+                ax.plot(dates, revenue_values, 'o-', color='#3498db', linewidth=2)
+                ax.set_title('Revenue Trend')
+                ax.set_ylabel('Revenue (AED)')
+                ax.grid(True, linestyle='--', alpha=0.7)
+                
+                # Rotate date labels for better readability
+                plt.setp(ax.get_xticklabels(), rotation=45, ha='right')
+                
+                # Add the canvas to the layout
+                self.report_revenue_chart.layout().addWidget(revenue_canvas)
+                revenue_fig.tight_layout()
+                revenue_canvas.draw()
+            
+            # Get top menu items for this restaurant
+            menu_query = """
+                SELECT 
+                    m.dish_name,
+                    COUNT(oi.order_item_id) as order_count,
+                    SUM(oi.total_price) as revenue,
+                    m.preparation_time,
+                    m.stock_quantity
+                FROM menus m
+                LEFT JOIN order_items oi ON m.menu_id = oi.menu_id
+                LEFT JOIN orders o ON oi.order_id = o.order_id
+                WHERE m.restaurant_id = %s
+                AND (o.order_time IS NULL OR (o.order_time BETWEEN %s AND %s))
+                GROUP BY m.menu_id
+                ORDER BY revenue DESC, order_count DESC
+                LIMIT 10
+            """
+            menu_data = execute_query(menu_query, (self.restaurant_id, start_date, end_date))
+            
+            if menu_data:
+                self.top_menu_items_table.setRowCount(len(menu_data))
+                for i, item in enumerate(menu_data):
+                    self.top_menu_items_table.setItem(i, 0, QTableWidgetItem(item['dish_name']))
+                    self.top_menu_items_table.setItem(i, 1, QTableWidgetItem(str(item['order_count'] or 0)))
+                    self.top_menu_items_table.setItem(i, 2, QTableWidgetItem(f"AED {float(item['revenue'] or 0):.2f}"))
+                    self.top_menu_items_table.setItem(i, 3, QTableWidgetItem(f"{float(item['preparation_time'] or 0)} min"))
+                    self.top_menu_items_table.setItem(i, 4, QTableWidgetItem(f"{item['stock_quantity']}"))
+            
+            # Get delivery personnel performance for this restaurant's orders
+            delivery_query = """
+                SELECT 
+                    dp.name,
+                    COUNT(o.order_id) as delivery_count,
+                    AVG(r.delivery_rating) as rating,
+                    AVG(TIMESTAMPDIFF(MINUTE, o.order_time, o.actual_delivery_time)) as avg_time,
+                    AVG(CASE WHEN o.actual_delivery_time <= o.estimated_delivery_time THEN 1 ELSE 0 END) * 100 as on_time_rate
+                FROM delivery_personnel dp
+                JOIN orders o ON dp.delivery_person_id = o.delivery_person_id
+                LEFT JOIN ratings r ON o.order_id = r.order_id
+                WHERE o.restaurant_id = %s
+                AND o.order_time BETWEEN %s AND %s
+                GROUP BY dp.delivery_person_id
+                ORDER BY delivery_count DESC
+                LIMIT 10
+            """
+            delivery_data = execute_query(delivery_query, (self.restaurant_id, start_date, end_date))
+            
+            if delivery_data:
+                self.delivery_performance_table.setRowCount(len(delivery_data))
+                for i, delivery in enumerate(delivery_data):
+                    self.delivery_performance_table.setItem(i, 0, QTableWidgetItem(delivery['name']))
+                    self.delivery_performance_table.setItem(i, 1, QTableWidgetItem(str(delivery['delivery_count'])))
+                    self.delivery_performance_table.setItem(i, 2, QTableWidgetItem(f"{float(delivery['rating'] or 0):.1f}"))
+                    self.delivery_performance_table.setItem(i, 3, QTableWidgetItem(f"{int(delivery['avg_time'] or 0)} min"))
+                    self.delivery_performance_table.setItem(i, 4, QTableWidgetItem(f"{float(delivery['on_time_rate'] or 0):.1f}%"))
+            
+            # Get customer insights for this restaurant
+            customer_query = """
+                SELECT 
+                    c.name,
+                    COUNT(o.order_id) as order_count,
+                    SUM(o.total_amount) as total_spent,
+                    AVG(o.total_amount) as avg_order_value,
+                    MAX(o.order_time) as last_order
+                FROM customers c
+                JOIN orders o ON c.customer_id = o.customer_id
+                WHERE o.restaurant_id = %s
+                AND o.order_time BETWEEN %s AND %s
+                GROUP BY c.customer_id
+                ORDER BY total_spent DESC
+                LIMIT 10
+            """
+            customer_data = execute_query(customer_query, (self.restaurant_id, start_date, end_date))
+            
+            if customer_data:
+                self.customer_insights_table.setRowCount(len(customer_data))
+                for i, customer in enumerate(customer_data):
+                    self.customer_insights_table.setItem(i, 0, QTableWidgetItem(customer['name']))
+                    self.customer_insights_table.setItem(i, 1, QTableWidgetItem(str(customer['order_count'])))
+                    self.customer_insights_table.setItem(i, 2, QTableWidgetItem(f"AED {float(customer['total_spent']):.2f}"))
+                    self.customer_insights_table.setItem(i, 3, QTableWidgetItem(f"AED {float(customer['avg_order_value']):.2f}"))
+                    self.customer_insights_table.setItem(i, 4, QTableWidgetItem(customer['last_order'].strftime("%Y-%m-%d %H:%M")))
+                    
+        except Exception as e:
+            print(f"Error refreshing restaurant analytics: {e}")
+            QMessageBox.critical(self, "Error", f"Failed to load analytics data: {str(e)}")
     
     def show_profile_setup(self):
         """Show profile setup if restaurant doesn't exist yet"""
@@ -910,6 +1412,8 @@ class RestaurantDashboard(QWidget):
         index = self.profile_cuisine.findText(cuisine)
         if index >= 0:
             self.profile_cuisine.setCurrentIndex(index)
+        else:
+            self.profile_cuisine.setCurrentText(cuisine)
         
         # Set advanced fields if available
         if 'opening_time' in self.restaurant_data and self.restaurant_data['opening_time']:
@@ -923,6 +1427,9 @@ class RestaurantDashboard(QWidget):
         
         if 'min_order_amount' in self.restaurant_data and self.restaurant_data['min_order_amount']:
             self.profile_min_order.setValue(float(self.restaurant_data['min_order_amount']))
+            
+        # Update the restaurant name in the sidebar
+        self.update_restaurant_name()
     
     def save_profile(self):
         """Save restaurant profile"""
@@ -975,10 +1482,8 @@ class RestaurantDashboard(QWidget):
                 # Reload restaurant data
                 self.load_restaurant_profile()
                 
-                # Update restaurant name in sidebar
-                sidebar_welcome = self.findChild(QLabel, "restaurant-name")
-                if sidebar_welcome and self.restaurant_data:
-                    sidebar_welcome.setText(self.restaurant_data['name'])
+                # Update restaurant name in sidebar using our method
+                self.update_restaurant_name()
                 
                 # If this was a new restaurant, enable menu management
                 if not self.restaurant_id and self.restaurant_data:
@@ -1189,6 +1694,9 @@ class RestaurantDashboard(QWidget):
     
     def view_reports(self):
         self.content_area.setCurrentWidget(self.reports_page)
+        # Refresh analytics data when reports page is viewed
+        if self.restaurant_id:
+            self.refresh_restaurant_analytics()
     
     def logout(self):
         reply = QMessageBox.question(
@@ -1467,22 +1975,90 @@ class MenuItemDialog(QDialog):
         self.restaurant_id = restaurant_id
         self.menu_item = menu_item
         self.setWindowTitle("Add Menu Item" if not menu_item else "Edit Menu Item")
-        self.setMinimumWidth(500)
+        self.setMinimumWidth(550)
+        self.setMinimumHeight(450)
         self.initUI()
+        
+        # Apply modern styling
+        self.setStyleSheet("""
+            QDialog {
+                background-color: #f8f9fa;
+            }
+            QLabel {
+                color: #2c3e50;
+                font-weight: bold;
+                font-size: 13px;
+            }
+            QLineEdit, QTextEdit, QSpinBox, QDoubleSpinBox, QComboBox {
+                background-color: white;
+                border: 1px solid #ddd;
+                border-radius: 4px;
+                padding: 8px;
+                color: #2c3e50;
+                selection-background-color: #3498db;
+                selection-color: white;
+            }
+            QLineEdit:focus, QTextEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus {
+                border: 1px solid #3498db;
+            }
+            QPushButton {
+                background-color: #3498db;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                padding: 10px 20px;
+                font-weight: bold;
+                min-width: 100px;
+            }
+            QPushButton:hover {
+                background-color: #2980b9;
+            }
+            QPushButton#cancel-btn {
+                background-color: #95a5a6;
+            }
+            QPushButton#cancel-btn:hover {
+                background-color: #7f8c8d;
+            }
+            QFormLayout > QLabel {
+                padding: 5px 0;
+            }
+        """)
     
     def initUI(self):
-        layout = QVBoxLayout(self)
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(20, 20, 20, 20)
+        main_layout.setSpacing(15)
         
-        form_layout = QFormLayout()
+        # Header
+        header_label = QLabel("Menu Item Details")
+        header_label.setStyleSheet("font-size: 18px; margin-bottom: 10px;")
+        header_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        
+        # Form container with white background
+        form_container = QFrame()
+        form_container.setStyleSheet("""
+            QFrame {
+                background-color: white;
+                border-radius: 8px;
+                padding: 5px;
+                border: 1px solid #e0e0e0;
+            }
+        """)
+        
+        form_layout = QFormLayout(form_container)
+        form_layout.setContentsMargins(15, 15, 15, 15)
+        form_layout.setSpacing(12)
         
         # Dish name field
         self.name_input = QLineEdit()
+        self.name_input.setPlaceholderText("Enter dish name")
         if self.menu_item:
             self.name_input.setText(self.menu_item['dish_name'])
         
         # Description field
         self.description_input = QTextEdit()
         self.description_input.setMaximumHeight(100)
+        self.description_input.setPlaceholderText("Enter dish description")
         if self.menu_item and self.menu_item['description']:
             self.description_input.setText(self.menu_item['description'])
         
@@ -1545,18 +2121,25 @@ class MenuItemDialog(QDialog):
         
         # Add buttons
         button_layout = QHBoxLayout()
+        button_layout.setContentsMargins(0, 10, 0, 0)
+        button_layout.setSpacing(10)
+        
         save_btn = QPushButton("Save")
+        save_btn.setObjectName("save-btn")
         save_btn.clicked.connect(self.save_menu_item)
         
         cancel_btn = QPushButton("Cancel")
+        cancel_btn.setObjectName("cancel-btn")
         cancel_btn.clicked.connect(self.reject)
         
-        button_layout.addWidget(save_btn)
+        button_layout.addStretch()
         button_layout.addWidget(cancel_btn)
+        button_layout.addWidget(save_btn)
         
         # Add to main layout
-        layout.addLayout(form_layout)
-        layout.addLayout(button_layout)
+        main_layout.addWidget(header_label)
+        main_layout.addWidget(form_container)
+        main_layout.addLayout(button_layout)
     
     def save_menu_item(self):
         # Validate input

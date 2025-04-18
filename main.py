@@ -3,7 +3,7 @@ import os
 from PySide6.QtWidgets import QApplication, QMainWindow, QWidget, QStackedWidget, QMessageBox
 from PySide6.QtCore import Qt, QSize
 from PySide6.QtGui import QFont, QIcon
-from db_utils import test_connection
+from db_utils import test_connection, reset_debug_state
 
 from auth.user import User, UserRole
 from ui.login import LoginWindow, RegisterWindow
@@ -44,6 +44,9 @@ class MainApplication(QMainWindow):
         """Handle user login by showing the appropriate dashboard"""
         if not user.is_authenticated:
             return
+        
+        # Reset debug state for a new session
+        reset_debug_state()
         
         # Create and show the appropriate dashboard based on user role
         if user.role == UserRole.CUSTOMER:

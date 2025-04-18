@@ -13,6 +13,14 @@ if 'DB_HOST' not in os.environ:
     os.environ['DB_PASSWORD'] = '12345678'
     os.environ['DB_NAME'] = 'food_delivery'
 
+# Flag to track if we've shown debug information in the current session
+_debug_shown = False
+
+def reset_debug_state():
+    """Reset the debug state - call this at the start of a new session"""
+    global _debug_shown
+    _debug_shown = False
+
 def get_connection_config():
     """Get database connection configuration based on platform"""
     config = {
@@ -76,21 +84,27 @@ def test_connection():
 
 def get_db_connection():
     """Get database connection using platform-specific configuration"""
+    global _debug_shown
+    
     try:
         config = get_connection_config()
-        print(f"DEBUG - Trying to connect with config: {config}")
-        # Print all config except password
-        debug_config = {k: v for k, v in config.items() if k != 'password'}
-        print(f"DEBUG - Connection config: {debug_config}")
+        
+        # Only show debug info the first time in this session
+        first_connection = not _debug_shown
+        if first_connection:
+            debug_config = {k: v for k, v in config.items() if k != 'password'}
+            print(f"DEBUG - Connecting with config: {debug_config}")
+            _debug_shown = True
         
         connection = mysql.connector.connect(**config)
-        if connection:
+        
+        # Show connection established message the first time
+        if first_connection:
             print(f"DEBUG - Connection established successfully")
+        
         return connection
     except mysql.connector.Error as err:
         print(f"ERROR - Database connection error: {err}")
-        print(f"ERROR - Error code: {err.errno}")
-        print(f"ERROR - Error message: {err.msg}")
         if err.errno == mysql.connector.errorcode.ER_ACCESS_DENIED_ERROR:
             print("ERROR - Check your username and password")
         elif err.errno == mysql.connector.errorcode.ER_BAD_DB_ERROR:
@@ -98,7 +112,6 @@ def get_db_connection():
         return None
     except Exception as e:
         print(f"ERROR - Unexpected error during connection: {e}")
-        print(f"ERROR - Error type: {type(e)}")
         return None
 
 def execute_query(query, params=None, fetch=True):
@@ -110,38 +123,24 @@ def execute_query(query, params=None, fetch=True):
         
         try:
             cursor = connection.cursor(dictionary=True)
-            # Debug - print exact query and parameters
-            param_str = str(params) if params else "None"
-            print(f"DEBUG - Executing SQL query: {query}")
-            print(f"DEBUG - With parameters: {param_str}")
             
             if params:
                 cursor.execute(query, params)
             else:
                 cursor.execute(query)
-            
-            # Debug - print query success
-            print(f"DEBUG - Query executed successfully")
                 
             if fetch:
                 result = cursor.fetchall()
-                print(f"DEBUG - Fetched {len(result) if result else 0} rows")
             else:
-                connection.commit()  # Commit the transaction for non-fetch operations
+                connection.commit()
                 result = cursor.lastrowid
-                print(f"DEBUG - Insert ID: {result}")
                 
             return result
         except mysql.connector.Error as err:
             error_msg = f"Error executing query: {err}"
             print(error_msg)
             
-            # Print the query for debugging
-            param_str = str(params) if params else "None"
-            print(f"Failed query: {query}")
-            print(f"Parameters: {param_str}")
-            
-            connection.rollback()  # Rollback on error
+            connection.rollback()
             return None
         finally:
             if 'cursor' in locals() and cursor:
@@ -150,7 +149,7 @@ def execute_query(query, params=None, fetch=True):
                 connection.close()
     except Exception as e:
         print(f"Database connection error: {e}")
-        return None 
+        return None
 
 def search_restaurants(search_term=None, cuisine_type=None, location=None, include_inactive=False):
     """Search restaurants by name, cuisine type, or location
