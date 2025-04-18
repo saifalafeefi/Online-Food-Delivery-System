@@ -91,7 +91,7 @@ def create_database():
                 user_id INT,
                 name VARCHAR(100) NOT NULL,
                 address VARCHAR(200) NOT NULL,
-                phone VARCHAR(20) NOT NULL,
+                phone VARCHAR(20),
                 email VARCHAR(100) NOT NULL,
                 account_status ENUM('Active', 'Inactive') DEFAULT 'Active',
                 default_address TEXT,

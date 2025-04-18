@@ -77,14 +77,28 @@ def test_connection():
 def get_db_connection():
     """Get database connection using platform-specific configuration"""
     try:
-        connection = mysql.connector.connect(**get_connection_config())
+        config = get_connection_config()
+        print(f"DEBUG - Trying to connect with config: {config}")
+        # Print all config except password
+        debug_config = {k: v for k, v in config.items() if k != 'password'}
+        print(f"DEBUG - Connection config: {debug_config}")
+        
+        connection = mysql.connector.connect(**config)
+        if connection:
+            print(f"DEBUG - Connection established successfully")
         return connection
     except mysql.connector.Error as err:
-        print(f"Error connecting to database: {err}")
+        print(f"ERROR - Database connection error: {err}")
+        print(f"ERROR - Error code: {err.errno}")
+        print(f"ERROR - Error message: {err.msg}")
         if err.errno == mysql.connector.errorcode.ER_ACCESS_DENIED_ERROR:
-            print("Check your username and password")
+            print("ERROR - Check your username and password")
         elif err.errno == mysql.connector.errorcode.ER_BAD_DB_ERROR:
-            print("Database does not exist")
+            print("ERROR - Database does not exist")
+        return None
+    except Exception as e:
+        print(f"ERROR - Unexpected error during connection: {e}")
+        print(f"ERROR - Error type: {type(e)}")
         return None
 
 def execute_query(query, params=None, fetch=True):
@@ -96,16 +110,26 @@ def execute_query(query, params=None, fetch=True):
         
         try:
             cursor = connection.cursor(dictionary=True)
+            # Debug - print exact query and parameters
+            param_str = str(params) if params else "None"
+            print(f"DEBUG - Executing SQL query: {query}")
+            print(f"DEBUG - With parameters: {param_str}")
+            
             if params:
                 cursor.execute(query, params)
             else:
                 cursor.execute(query)
+            
+            # Debug - print query success
+            print(f"DEBUG - Query executed successfully")
                 
             if fetch:
                 result = cursor.fetchall()
+                print(f"DEBUG - Fetched {len(result) if result else 0} rows")
             else:
                 connection.commit()  # Commit the transaction for non-fetch operations
                 result = cursor.lastrowid
+                print(f"DEBUG - Insert ID: {result}")
                 
             return result
         except mysql.connector.Error as err:

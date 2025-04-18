@@ -240,6 +240,12 @@ class RegisterWindow(QWidget):
         self.email_input = QLineEdit()
         self.email_input.setPlaceholderText("Your email address")
         
+        self.phone_input = QLineEdit()
+        self.phone_input.setPlaceholderText("Your phone number")
+        
+        self.address_input = QLineEdit()
+        self.address_input.setPlaceholderText("Your address (optional)")
+        
         self.password_input = QLineEdit()
         self.password_input.setPlaceholderText("Choose a password")
         self.password_input.setEchoMode(QLineEdit.EchoMode.Password)
@@ -266,6 +272,8 @@ class RegisterWindow(QWidget):
         
         form_layout.addRow("Username:", self.username_input)
         form_layout.addRow("Email:", self.email_input)
+        form_layout.addRow("Phone:", self.phone_input)
+        form_layout.addRow("Address (optional):", self.address_input)
         form_layout.addRow("Password:", self.password_input)
         form_layout.addRow("Confirm Password:", self.confirm_password_input)
         
@@ -348,12 +356,14 @@ class RegisterWindow(QWidget):
     def register(self):
         username = self.username_input.text().strip()
         email = self.email_input.text().strip()
+        phone = self.phone_input.text().strip()
+        address = self.address_input.text().strip()
         password = self.password_input.text()
         confirm_password = self.confirm_password_input.text()
         
-        # Validate inputs
+        # Validate inputs - phone and address are now optional
         if not username or not email or not password or not confirm_password:
-            QMessageBox.warning(self, "Warning", "Please fill in all fields")
+            QMessageBox.warning(self, "Warning", "Please fill in all required fields")
             return
         
         if password != confirm_password:
@@ -371,7 +381,7 @@ class RegisterWindow(QWidget):
             role = UserRole.CUSTOMER  # Default
         
         # Attempt to register
-        success, message = User.register(username, email, password, role)
+        success, message = User.register(username, email, password, role, phone, address)
         
         if success:
             QMessageBox.information(self, "Success", message)

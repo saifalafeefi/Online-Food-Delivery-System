@@ -49,7 +49,7 @@ class User:
         return new_hash == stored_password_hash
     
     @staticmethod
-    def register(username, email, password, role):
+    def register(username, email, password, role, phone="", address=""):
         """Register a new user with the given details."""
         # Check if username or email already exists
         existing_user = execute_query(
@@ -86,30 +86,38 @@ class User:
                 # Create initial profile based on role
                 try:
                     if role == UserRole.CUSTOMER:
+                        # Both phone and address must be empty strings if they're empty, NOT NULL
+                        phone_value = phone if phone else ""
+                        address_value = address if address else ""
                         execute_query(
                             """
                             INSERT INTO customers (user_id, name, phone, address, email)
                             VALUES (%s, %s, %s, %s, %s)
                             """,
-                            (user_id, username, "", "", email),
+                            (user_id, username, phone_value, address_value, email),
                             fetch=False
                         )
                     elif role == UserRole.RESTAURANT:
+                        # Phone is NOT NULL in database schema, so use empty string if null
+                        phone_value = phone if phone else ""
+                        address_value = address if address else ""
                         execute_query(
                             """
                             INSERT INTO restaurants (user_id, name, address, contact_number, cuisine_type, rating)
                             VALUES (%s, %s, %s, %s, %s, %s)
                             """,
-                            (user_id, "Your Restaurant", "", "", "Other", 0.0),
+                            (user_id, "Your Restaurant", address_value, phone_value, "Other", 0.0),
                             fetch=False
                         )
                     elif role == UserRole.DELIVERY:
+                        # Phone is NOT NULL in database schema, so use empty string if null
+                        phone_value = phone if phone else ""
                         execute_query(
                             """
                             INSERT INTO delivery_personnel (user_id, name, phone, status, vehicle_type)
                             VALUES (%s, %s, %s, %s, %s)
                             """,
-                            (user_id, username, "", "Available", "Light Vehicle - Automatic"),
+                            (user_id, username, phone_value, "Available", "Light Vehicle - Automatic"),
                             fetch=False
                         )
                 except Exception as e:
