@@ -288,7 +288,30 @@ class DeliveryDashboard(QWidget):
         self.is_available = not self.is_available
         
         if not self.delivery_person_id:
-            QMessageBox.warning(self, "Profile Required", "Please complete your profile first.")
+            msg = QMessageBox()
+            msg.setIcon(QMessageBox.Icon.Warning)
+            msg.setWindowTitle("Profile Required")
+            msg.setText("Please complete your profile first.")
+            msg.setStyleSheet("""
+                QMessageBox {
+                    background-color: #2c3e50;
+                }
+                QLabel {
+                    color: white;
+                    font-size: 14px;
+                }
+                QPushButton {
+                    background-color: #3498db;
+                    color: white;
+                    padding: 6px 12px;
+                    border-radius: 4px;
+                    border: none;
+                }
+                QPushButton:hover {
+                    background-color: #2980b9;
+                }
+            """)
+            msg.exec()
             return
         
         status = "Available" if self.is_available else "Assigned"
@@ -361,9 +384,7 @@ class DeliveryDashboard(QWidget):
                 ORDER BY o.order_date DESC
             """
             
-            print("DEBUG - Querying for ready orders with SQL:", query)
             orders = execute_query(query)
-            print(f"DEBUG - Found {len(orders) if orders else 0} ready orders")
             
             if not orders:
                 self.display_no_orders_message(self.new_orders_container, "No new orders available for pickup")
@@ -454,6 +475,9 @@ class DeliveryDashboard(QWidget):
             self.total_earnings_value.setText("0 AED")
             self.total_deliveries_value.setText("0")
             self.avg_rating_value.setText("N/A")
+            
+            # Clear earnings table
+            self.earnings_table.setRowCount(0)
             return
         
         try:
@@ -468,6 +492,9 @@ class DeliveryDashboard(QWidget):
                 self.total_earnings_value.setText("0 AED")
                 self.total_deliveries_value.setText("0")
                 self.avg_rating_value.setText("N/A")
+                
+                # Clear earnings table
+                self.earnings_table.setRowCount(0)
                 return
             
             # Calculate earnings (10% of total order value in AED)
@@ -489,12 +516,51 @@ class DeliveryDashboard(QWidget):
                 self.avg_rating_value.setText(f"{ratings[0]['avg_rating']:.1f} / 5.0")
             else:
                 self.avg_rating_value.setText("N/A")
+            
+            # Populate earnings table with completed deliveries
+            completed_deliveries = execute_query("""
+                SELECT o.order_id, o.order_date, o.actual_delivery_time, 
+                       r.name as restaurant_name, o.total_amount
+                FROM orders o
+                JOIN restaurants r ON o.restaurant_id = r.restaurant_id
+                WHERE o.delivery_person_id = %s AND o.delivery_status = 'Delivered'
+                ORDER BY o.actual_delivery_time DESC
+            """, (self.delivery_person_id,))
+            
+            if completed_deliveries:
+                # Clear table
+                self.earnings_table.setRowCount(0)
+                
+                # Set row count
+                self.earnings_table.setRowCount(len(completed_deliveries))
+                
+                # Fill table with data
+                for row, delivery in enumerate(completed_deliveries):
+                    # Format date
+                    try:
+                        date_obj = datetime.strptime(str(delivery['order_date']), "%Y-%m-%d %H:%M:%S")
+                        formatted_date = date_obj.strftime("%b %d, %Y")
+                    except:
+                        formatted_date = str(delivery['order_date'])
+                    
+                    # Calculate delivery fee (10% of order total)
+                    fee = float(delivery['total_amount']) * 0.10 * 3.67  # Convert to AED
+                    
+                    # Add data to table
+                    self.earnings_table.setItem(row, 0, QTableWidgetItem(str(delivery['order_id'])))
+                    self.earnings_table.setItem(row, 1, QTableWidgetItem(formatted_date))
+                    self.earnings_table.setItem(row, 2, QTableWidgetItem(delivery['restaurant_name']))
+                    self.earnings_table.setItem(row, 3, QTableWidgetItem(f"{fee:.2f} AED"))
+            else:
+                # Clear table if no deliveries
+                self.earnings_table.setRowCount(0)
                 
         except Exception as e:
             print(f"Error loading earnings: {e}")
             self.total_earnings_value.setText("Error")
             self.total_deliveries_value.setText("Error")
             self.avg_rating_value.setText("Error")
+            self.earnings_table.setRowCount(0)
     
     def load_delivery_history(self):
         """Load delivery history for the current delivery person"""
@@ -1141,7 +1207,30 @@ class DeliveryDashboard(QWidget):
         """Accept a delivery order"""
         try:
             if not self.delivery_person_id:
-                QMessageBox.warning(self, "Error", "Delivery personnel profile not found!")
+                msg = QMessageBox()
+                msg.setIcon(QMessageBox.Icon.Warning)
+                msg.setWindowTitle("Error")
+                msg.setText("Delivery personnel profile not found!")
+                msg.setStyleSheet("""
+                    QMessageBox {
+                        background-color: #2c3e50;
+                    }
+                    QLabel {
+                        color: white;
+                        font-size: 14px;
+                    }
+                    QPushButton {
+                        background-color: #3498db;
+                        color: white;
+                        padding: 6px 12px;
+                        border-radius: 4px;
+                        border: none;
+                    }
+                    QPushButton:hover {
+                        background-color: #2980b9;
+                    }
+                """)
+                msg.exec()
                 return
             
             # Update the order status and assign the delivery person
@@ -1153,13 +1242,59 @@ class DeliveryDashboard(QWidget):
             result = execute_query(query, ("On Delivery", self.delivery_person_id, order_id), fetch=False)
             
             if result is not None:
-                QMessageBox.information(self, "Success", f"Order #{order_id} accepted for delivery!")
+                msg = QMessageBox()
+                msg.setIcon(QMessageBox.Icon.Information)
+                msg.setWindowTitle("Success")
+                msg.setText(f"Order #{order_id} accepted for delivery!")
+                msg.setStyleSheet("""
+                    QMessageBox {
+                        background-color: #2c3e50;
+                    }
+                    QLabel {
+                        color: white;
+                        font-size: 14px;
+                    }
+                    QPushButton {
+                        background-color: #3498db;
+                        color: white;
+                        padding: 6px 12px;
+                        border-radius: 4px;
+                        border: none;
+                    }
+                    QPushButton:hover {
+                        background-color: #2980b9;
+                    }
+                """)
+                msg.exec()
                 
                 # Refresh the orders
                 self.load_new_orders()
                 self.load_active_deliveries()
             else:
-                QMessageBox.warning(self, "Error", "Failed to update order. Please try again.")
+                msg = QMessageBox()
+                msg.setIcon(QMessageBox.Icon.Warning)
+                msg.setWindowTitle("Error")
+                msg.setText("Failed to update order. Please try again.")
+                msg.setStyleSheet("""
+                    QMessageBox {
+                        background-color: #2c3e50;
+                    }
+                    QLabel {
+                        color: white;
+                        font-size: 14px;
+                    }
+                    QPushButton {
+                        background-color: #3498db;
+                        color: white;
+                        padding: 6px 12px;
+                        border-radius: 4px;
+                        border: none;
+                    }
+                    QPushButton:hover {
+                        background-color: #2980b9;
+                    }
+                """)
+                msg.exec()
             
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to accept delivery: {str(e)}")
@@ -1177,14 +1312,60 @@ class DeliveryDashboard(QWidget):
             result = execute_query(query, ("Delivered", order_id), fetch=False)
             
             if result is not None:
-                QMessageBox.information(self, "Success", f"Order #{order_id} marked as delivered!")
+                msg = QMessageBox()
+                msg.setIcon(QMessageBox.Icon.Information)
+                msg.setWindowTitle("Success")
+                msg.setText(f"Order #{order_id} marked as delivered!")
+                msg.setStyleSheet("""
+                    QMessageBox {
+                        background-color: #2c3e50;
+                    }
+                    QLabel {
+                        color: white;
+                        font-size: 14px;
+                    }
+                    QPushButton {
+                        background-color: #3498db;
+                        color: white;
+                        padding: 6px 12px;
+                        border-radius: 4px;
+                        border: none;
+                    }
+                    QPushButton:hover {
+                        background-color: #2980b9;
+                    }
+                """)
+                msg.exec()
                 
                 # Refresh the orders
                 self.load_active_deliveries()
                 self.load_delivery_history()
                 self.load_earnings()  # Update earnings
             else:
-                QMessageBox.warning(self, "Error", "Failed to update order. Please try again.")
+                msg = QMessageBox()
+                msg.setIcon(QMessageBox.Icon.Warning)
+                msg.setWindowTitle("Error")
+                msg.setText("Failed to update order. Please try again.")
+                msg.setStyleSheet("""
+                    QMessageBox {
+                        background-color: #2c3e50;
+                    }
+                    QLabel {
+                        color: white;
+                        font-size: 14px;
+                    }
+                    QPushButton {
+                        background-color: #3498db;
+                        color: white;
+                        padding: 6px 12px;
+                        border-radius: 4px;
+                        border: none;
+                    }
+                    QPushButton:hover {
+                        background-color: #2980b9;
+                    }
+                """)
+                msg.exec()
             
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to complete delivery: {str(e)}")
@@ -1207,13 +1388,51 @@ class DeliveryDashboard(QWidget):
             
             if QApplication.mouseButtons() != Qt.MouseButton.NoButton:
                 return
+            
+            # Use a static counter to limit how often we refresh
+            # This prevents the console from being spammed with messages
+            if not hasattr(self, '_refresh_counter'):
+                self._refresh_counter = 0
+            
+            self._refresh_counter += 1
+            if self._refresh_counter >= 6:  # Only refresh every ~3 seconds (6 * 0.5s = 3s)
+                self._refresh_counter = 0
                 
-            current_widget = self.content_area.currentWidget()
-            if current_widget == self.new_orders_page:
-                self.load_new_orders()
-            elif current_widget == self.active_deliveries_page:
-                self.load_active_deliveries()
+                current_widget = self.content_area.currentWidget()
+                if current_widget == self.new_orders_page:
+                    self.load_new_orders()
+                elif current_widget == self.active_deliveries_page:
+                    self.load_active_deliveries()
         except Exception as e:
             # Silent exception handling for auto-refresh
-            print(f"Auto-refresh error in delivery dashboard: {e}")
-            # Don't show error to user since this runs automatically 
+            # Don't show error to user since this runs automatically
+            pass
+    
+    def auto_refresh(self):
+        """Automatically refresh data based on current page"""
+        try:
+            # Skip refresh if mouse button is pressed to prevent click interference
+            from PySide6.QtWidgets import QApplication
+            from PySide6.QtCore import Qt
+            
+            if QApplication.mouseButtons() != Qt.MouseButton.NoButton:
+                return
+            
+            # Use a static counter to limit how often we refresh
+            # This prevents the console from being spammed with messages
+            if not hasattr(self, '_refresh_counter'):
+                self._refresh_counter = 0
+            
+            self._refresh_counter += 1
+            if self._refresh_counter >= 6:  # Only refresh every ~3 seconds (6 * 0.5s = 3s)
+                self._refresh_counter = 0
+                
+                current_widget = self.content_area.currentWidget()
+                if current_widget == self.new_orders_page:
+                    self.load_new_orders()
+                elif current_widget == self.active_deliveries_page:
+                    self.load_active_deliveries()
+        except Exception as e:
+            # Silent exception handling for auto-refresh
+            # Don't show error to user since this runs automatically
+            pass 

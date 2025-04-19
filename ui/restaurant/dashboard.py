@@ -21,115 +21,28 @@ class RestaurantDashboard(QWidget):
         self.user = user
         self.restaurant_id = None
         self.restaurant_data = None
-        self._source_call = None  # Track source of method calls
-        self.restaurant_name_label = None  # Reference to the restaurant name label
+        self._source_call = None  # Track the source of profile save calls
+        
+        # Initialize order layouts dictionary
         self.order_layouts = {
-            "New": None,
-            "Preparing": None,
-            "Ready for Pickup": None,
-            "Completed": None,
-            "Cancelled": None
+            'New': None,
+            'Preparing': None,
+            'Ready for Pickup': None,
+            'Completed': None,
+            'Cancelled': None
         }
         
-        # Set up auto-refresh timer for real-time updates
-        self.refresh_timer = QTimer(self)
-        self.refresh_timer.timeout.connect(self.auto_refresh)
-        self.refresh_timer.start(500)  # Refresh every 0.5 seconds
-        
         self.initUI()
-        # Load restaurant profile after UI initialization
+        
+        # Load restaurant data
         self.load_restaurant_profile()
-        if self.restaurant_data:
-            self.load_profile_data()
-            # Update restaurant name in the sidebar
-            self.update_restaurant_name()
-            # Load dashboard stats if restaurant exists
-            self.load_dashboard_stats()
-            # Start with dashboard
-            self.show_dashboard()
-        else:
-            # Only show profile setup if no restaurant exists
-            self.show_profile_setup()
-    
-    def update_restaurant_name(self):
-        """Update the restaurant name in the sidebar"""
-        if self.restaurant_name_label and self.restaurant_data and 'name' in self.restaurant_data:
-            self.restaurant_name_label.setText(self.restaurant_data['name'])
-    
-    def load_restaurant_profile(self):
-        # Get the restaurant profile for this user
-        result = execute_query(
-            "SELECT r.*, u.is_active FROM restaurants r JOIN users u ON r.user_id = u.user_id WHERE r.user_id = %s",
-            (self.user.user_id,)
-        )
         
-        if result:
-            self.restaurant_data = result[0]
-            self.restaurant_id = self.restaurant_data['restaurant_id']
-            
-            # Update restaurant name in the sidebar
-            self.update_restaurant_name()
-            
-            # Check if restaurant is suspended
-            if 'is_active' in self.restaurant_data and not self.restaurant_data['is_active']:
-                # Show suspension notice
-                QMessageBox.warning(
-                    self,
-                    "Account Suspended",
-                    "Your restaurant account has been suspended by the administrator. " +
-                    "While you can still access your dashboard, your restaurant will not be visible to customers. " +
-                    "Please contact support for assistance."
-                )
-                
-                # Add a persistent suspension banner
-                self.show_suspension_banner()
-    
-    def show_suspension_banner(self):
-        """Show a red banner indicating account suspension"""
-        # Create a red banner at the top of the dashboard
-        banner = QFrame()
-        banner.setStyleSheet("""
-            background-color: #e74c3c;
-            color: white;
-            padding: 10px;
-            border-radius: 4px;
-            margin: 5px;
-        """)
-        banner_layout = QHBoxLayout(banner)
+        # Set up auto-refresh timer for orders
+        self.refresh_timer = QTimer(self)
+        self.refresh_timer.setInterval(60000)  # 60 seconds
+        self.refresh_timer.timeout.connect(self.auto_refresh)
+        self.refresh_timer.start()
         
-        warning_label = QLabel("⚠️ ACCOUNT SUSPENDED: Your restaurant is not visible to customers")
-        warning_label.setStyleSheet("font-weight: bold; color: white;")
-        
-        contact_btn = QPushButton("Contact Support")
-        contact_btn.setStyleSheet("""
-            background-color: white;
-            color: #e74c3c;
-            border: none;
-            padding: 5px 10px;
-        """)
-        
-        banner_layout.addWidget(warning_label)
-        banner_layout.addStretch()
-        banner_layout.addWidget(contact_btn)
-        
-        # Find main layout and insert at the top
-        main_layout = self.findChild(QHBoxLayout)
-        if main_layout:
-            # Get the widget that contains all content (usually a QStackedWidget)
-            content_widget = None
-            for i in range(main_layout.count()):
-                item = main_layout.itemAt(i)
-                if item.widget() and not item.widget().objectName() == "sidebar":
-                    content_widget = item.widget()
-                    break
-            
-            if content_widget:
-                # Find the content layout
-                content_layout = content_widget.findChild(QVBoxLayout)
-                if content_layout:
-                    # Insert banner at the top
-                    content_layout.insertWidget(0, banner)
-    
     def initUI(self):
         self.setWindowTitle("Food Delivery - Restaurant Dashboard")
         
@@ -754,17 +667,17 @@ class RestaurantDashboard(QWidget):
             
             if result is not None:
                 print(f"Order {order_display} status updated to {db_status} successfully")
-                QMessageBox.information(self, "Success", f"Order {order_display} status updated to {new_status}")
+                self.show_info_message("Success", f"Order {order_display} status updated to {new_status}")
                 # Refresh orders
                 self.load_all_orders()
                 # Also refresh dashboard stats when order status changes
                 self.load_dashboard_stats()
             else:
                 print(f"Failed to update Order {order_display} status to {db_status}")
-                QMessageBox.warning(self, "Error", "Failed to update order status")
+                self.show_warning_message("Error", "Failed to update order status")
         except Exception as e:
             print(f"Error updating order status: {e}")
-            QMessageBox.critical(self, "Error", f"Failed to update order status: {str(e)}")
+            self.show_error_message("Error", f"Failed to update order status: {str(e)}")
     
     def create_menu_page(self):
         page = QWidget()
@@ -1398,9 +1311,144 @@ class RestaurantDashboard(QWidget):
             print(f"Error refreshing restaurant analytics: {e}")
             QMessageBox.critical(self, "Error", f"Failed to load analytics data: {str(e)}")
     
+    def show_styled_message_box(self, icon, title, text, buttons=QMessageBox.StandardButton.Ok):
+        """Show a styled message box that matches the app theme"""
+        msg_box = QMessageBox(self)
+        msg_box.setIcon(icon)
+        msg_box.setWindowTitle(title)
+        msg_box.setText(text)
+        msg_box.setStandardButtons(buttons)
+        
+        # Apply dark theme styling
+        msg_box.setStyleSheet("""
+            QMessageBox {
+                background-color: #2c3e50;
+                color: white;
+            }
+            QLabel {
+                color: white;
+                font-size: 14px;
+            }
+            QPushButton {
+                background-color: #3498db;
+                color: white;
+                border-radius: 4px;
+                padding: 6px 15px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #2980b9;
+            }
+            QPushButton:pressed {
+                background-color: #1c6ea4;
+            }
+        """)
+        
+        return msg_box.exec()
+
+    def show_info_message(self, title, text):
+        """Show styled information message"""
+        return self.show_styled_message_box(QMessageBox.Icon.Information, title, text)
+        
+    def show_warning_message(self, title, text):
+        """Show styled warning message"""
+        return self.show_styled_message_box(QMessageBox.Icon.Warning, title, text)
+        
+    def show_error_message(self, title, text):
+        """Show styled error message"""
+        return self.show_styled_message_box(QMessageBox.Icon.Critical, title, text)
+        
+    def show_question_message(self, title, text):
+        """Show styled question message with Yes/No buttons"""
+        return self.show_styled_message_box(
+            QMessageBox.Icon.Question, 
+            title, 
+            text, 
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+    
+    def show_suspension_banner(self):
+        """Show a red banner indicating account suspension"""
+        # Create a red banner at the top of the dashboard
+        banner = QFrame()
+        banner.setStyleSheet("""
+            background-color: #e74c3c;
+            color: white;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 5px;
+        """)
+        banner_layout = QHBoxLayout(banner)
+        
+        warning_label = QLabel("⚠️ ACCOUNT SUSPENDED: Your restaurant is not visible to customers")
+        warning_label.setStyleSheet("font-weight: bold; color: white;")
+        
+        contact_btn = QPushButton("Contact Support")
+        contact_btn.setStyleSheet("""
+            background-color: white;
+            color: #e74c3c;
+            border: none;
+            padding: 5px 10px;
+        """)
+        
+        banner_layout.addWidget(warning_label)
+        banner_layout.addStretch()
+        banner_layout.addWidget(contact_btn)
+        
+        # Find main layout and insert at the top
+        main_layout = self.findChild(QHBoxLayout)
+        if main_layout:
+            # Get the widget that contains all content (usually a QStackedWidget)
+            content_widget = None
+            for i in range(main_layout.count()):
+                item = main_layout.itemAt(i)
+                if item.widget() and not item.widget().objectName() == "sidebar":
+                    content_widget = item.widget()
+                    break
+            
+            if content_widget:
+                # Find the content layout
+                content_layout = content_widget.findChild(QVBoxLayout)
+                if content_layout:
+                    # Insert banner at the top
+                    content_layout.insertWidget(0, banner)
+    
+    def load_restaurant_profile(self):
+        # Get the restaurant profile for this user
+        result = execute_query(
+            "SELECT r.*, u.is_active FROM restaurants r JOIN users u ON r.user_id = u.user_id WHERE r.user_id = %s",
+            (self.user.user_id,)
+        )
+        
+        if result:
+            self.restaurant_data = result[0]
+            self.restaurant_id = self.restaurant_data['restaurant_id']
+            
+            # Update restaurant name in the sidebar
+            self.update_restaurant_name()
+            
+            # Check if restaurant is suspended
+            if 'is_active' in self.restaurant_data and not self.restaurant_data['is_active']:
+                # Show suspension notice
+                self.show_warning_message(
+                    "Account Suspended",
+                    "Your restaurant account has been suspended by the administrator. " +
+                    "While you can still access your dashboard, your restaurant will not be visible to customers. " +
+                    "Please contact support for assistance."
+                )
+                
+                # Add a persistent suspension banner
+                self.show_suspension_banner()
+    
+    def update_restaurant_name(self):
+        """Update the restaurant name display in UI"""
+        if hasattr(self, 'restaurant_name_label') and self.restaurant_data:
+            restaurant_name = self.restaurant_data.get('name', 'Your Restaurant')
+            self.restaurant_name_label.setText(restaurant_name)
+    
     def show_profile_setup(self):
         """Show profile setup if restaurant doesn't exist yet"""
-        QMessageBox.information(self, "Profile Setup", "Please set up your restaurant profile first")
+        self.show_info_message("Profile Setup", "Please set up your restaurant profile first")
         self.show_profile_page()
         
         # Pre-fill with defaults if fields are accessible
@@ -1455,7 +1503,7 @@ class RestaurantDashboard(QWidget):
         
         # Validate required fields only for manual saves
         if (not name or not address or not contact) and self._source_call != "load_profile":
-            QMessageBox.warning(self, "Validation Error", "Please fill in all required fields")
+            self.show_warning_message("Validation Error", "Please fill in all required fields")
             return
             
         # Use defaults if empty
@@ -1488,7 +1536,7 @@ class RestaurantDashboard(QWidget):
             if result is not None:
                 # Only show success message for manual saves
                 if self._source_call != "load_profile":
-                    QMessageBox.information(self, "Success", "Restaurant profile saved successfully!")
+                    self.show_info_message("Success", "Restaurant profile saved successfully!")
                 
                 # Reload restaurant data
                 self.load_restaurant_profile()
@@ -1504,12 +1552,12 @@ class RestaurantDashboard(QWidget):
             else:
                 # Only show error for manual saves
                 if self._source_call != "load_profile":
-                    QMessageBox.critical(self, "Error", "Failed to save profile")
+                    self.show_error_message("Error", "Failed to save profile")
                 
         except Exception as e:
             # Only show error for manual saves
             if self._source_call != "load_profile":
-                QMessageBox.critical(self, "Error", f"An error occurred: {str(e)}")
+                self.show_error_message("Error", f"An error occurred: {str(e)}")
                 
         # Reset source call tracker
         self._source_call = None
@@ -1643,7 +1691,7 @@ class RestaurantDashboard(QWidget):
     def add_menu_item(self):
         """Add a new menu item"""
         if not self.restaurant_id:
-            QMessageBox.warning(self, "Profile Required", "Please set up your restaurant profile first")
+            self.show_warning_message("Profile Required", "Please set up your restaurant profile first")
             self.show_profile_page()
             return
             
@@ -1660,10 +1708,9 @@ class RestaurantDashboard(QWidget):
     
     def delete_menu_item(self, menu_id):
         """Delete a menu item"""
-        reply = QMessageBox.question(
-            self, "Confirm Deletion", 
-            "Are you sure you want to delete this menu item?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        reply = self.show_question_message(
+            "Confirm Deletion", 
+            "Are you sure you want to delete this menu item?"
         )
         
         if reply == QMessageBox.StandardButton.Yes:
@@ -1674,11 +1721,11 @@ class RestaurantDashboard(QWidget):
             )
             
             if result is not None:
-                QMessageBox.information(self, "Success", "Menu item deleted successfully")
+                self.show_info_message("Success", "Menu item deleted successfully")
                 self.load_menu_items()
                 self.load_categories()
             else:
-                QMessageBox.critical(self, "Error", "Failed to delete menu item")
+                self.show_error_message("Error", "Failed to delete menu item")
     
     def show_dashboard(self):
         self.content_area.setCurrentWidget(self.dashboard_page)
@@ -1710,10 +1757,9 @@ class RestaurantDashboard(QWidget):
             self.refresh_restaurant_analytics()
     
     def logout(self):
-        reply = QMessageBox.question(
-            self, "Confirm Logout", 
-            "Are you sure you want to logout?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        reply = self.show_question_message(
+            "Confirm Logout", 
+            "Are you sure you want to logout?"
         )
         
         if reply == QMessageBox.StandardButton.Yes:
@@ -1842,39 +1888,45 @@ class RestaurantDashboard(QWidget):
             QMessageBox.critical(self, "Error", f"Failed to load dashboard statistics: {str(e)}")
 
     def cancel_order(self, order_id):
-        """Cancel an order and restore stock"""
+        """Cancel an order and restore stock quantities"""
         try:
-            # Get order details for display
+            # Get the order details for reference
             order_info = execute_query("SELECT order_number FROM orders WHERE order_id = %s", (order_id,))
             order_display = f"#{order_id}"
-            if order_info and order_info[0]['order_number']:
+            if order_info and order_info[0].get('order_number'):
                 order_display = f"#{order_info[0]['order_number']}"
             
-            # Get order items first
-            items = execute_query("""
-                SELECT menu_id, quantity 
-                FROM order_items 
-                WHERE order_id = %s
+            # Get all order items to restore stock
+            order_items = execute_query("""
+                SELECT oi.menu_id, oi.quantity 
+                FROM order_items oi 
+                WHERE oi.order_id = %s
             """, (order_id,))
             
-            # Restore stock for each item
-            for item in items:
-                execute_query("""
-                    UPDATE menus 
-                    SET stock_quantity = stock_quantity + %s,
-                        availability = CASE 
-                            WHEN stock_quantity + %s > 0 THEN 'In Stock' 
-                            ELSE availability 
-                        END
-                    WHERE menu_id = %s
-                """, (item['quantity'], item['quantity'], item['menu_id']), fetch=False)
+            # Update order status to Cancelled
+            status_query = "UPDATE orders SET delivery_status = 'Cancelled' WHERE order_id = %s"
+            execute_query(status_query, (order_id,), fetch=False)
             
-            # Update order status - Fixed column name from order_status to delivery_status
-            execute_query("""
-                UPDATE orders 
-                SET delivery_status = 'Cancelled' 
-                WHERE order_id = %s
-            """, (order_id,), fetch=False)
+            # Restore stock for each item
+            for item in order_items:
+                menu_id = item['menu_id']
+                quantity = item['quantity']
+                
+                # Get current stock
+                current_stock = execute_query(
+                    "SELECT stock_quantity FROM menus WHERE menu_id = %s", 
+                    (menu_id,)
+                )
+                
+                if current_stock:
+                    new_stock = current_stock[0]['stock_quantity'] + quantity
+                    
+                    # Update stock
+                    execute_query(
+                        "UPDATE menus SET stock_quantity = %s WHERE menu_id = %s",
+                        (new_stock, menu_id),
+                        fetch=False
+                    )
             
             # Refresh orders
             self.load_all_orders()
@@ -1882,18 +1934,16 @@ class RestaurantDashboard(QWidget):
             # Also refresh dashboard stats
             self.load_dashboard_stats()
             
-            QMessageBox.information(
-                self,
+            self.show_info_message(
                 "Order Cancelled",
                 f"Order {order_display} has been cancelled and stock quantities have been restored."
             )
         except Exception as e:
-            QMessageBox.critical(
-                self,
+            self.show_error_message(
                 "Error",
                 f"Failed to cancel order: {str(e)}"
             )
-
+    
     def search_orders(self):
         """Search orders with the provided criteria"""
         search_term = self.orders_search_input.text().strip()
@@ -2003,61 +2053,68 @@ class RestaurantDashboard(QWidget):
             print(f"Auto-refresh error in restaurant dashboard: {e}")
             # Don't show error to user since this runs automatically
 
+    def load_orders_for_tab(self, tab_status):
+        """Load orders for a specific tab"""
+        if not self.restaurant_id:
+            return
+            
+        try:
+            # Clear existing orders
+            layout = self.order_layouts[tab_status]
+            while layout.count():
+                item = layout.takeAt(0)
+                widget = item.widget()
+                if widget:
+                    widget.deleteLater()
+            
+            # Map tab status to database status values
+            status_db_map = {
+                'New': "('Pending')",
+                'Preparing': "('Confirmed', 'Preparing')",
+                'Ready for Pickup': "('On Delivery')",
+                'Completed': "('Delivered')",
+                'Cancelled': "('Cancelled')"
+            }
+            
+            # Get status values for the query
+            status_clause = status_db_map.get(tab_status, "('Pending')")
+            
+            # Get orders with the appropriate status
+            query = f"""
+                SELECT o.*, c.name as customer_name, c.phone as customer_phone, dp.name as delivery_person_name
+                FROM orders o
+                LEFT JOIN customers c ON o.customer_id = c.customer_id
+                LEFT JOIN delivery_personnel dp ON o.delivery_person_id = dp.delivery_person_id
+                WHERE o.restaurant_id = %s
+                AND o.delivery_status IN {status_clause}
+                ORDER BY o.order_time DESC
+            """
+            
+            orders = execute_query(query, (self.restaurant_id,))
+            
+            if not orders:
+                no_orders = QLabel(f"No {tab_status.lower()} orders")
+                no_orders.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                layout.addWidget(no_orders)
+                return
+            
+            # Add orders to the tab
+            for order in orders:
+                self.add_order_card(order, tab_status)
+                
+        except Exception as e:
+            self.show_error_message("Error", f"Failed to load orders: {str(e)}")
+
 
 class MenuItemDialog(QDialog):
     def __init__(self, parent=None, restaurant_id=None, menu_item=None):
         super().__init__(parent)
         self.restaurant_id = restaurant_id
         self.menu_item = menu_item
-        self.setWindowTitle("Add Menu Item" if not menu_item else "Edit Menu Item")
-        self.setMinimumWidth(550)
-        self.setMinimumHeight(450)
-        self.initUI()
+        self.parent = parent
         
-        # Apply modern styling
-        self.setStyleSheet("""
-            QDialog {
-                background-color: #f8f9fa;
-            }
-            QLabel {
-                color: #2c3e50;
-                font-weight: bold;
-                font-size: 13px;
-            }
-            QLineEdit, QTextEdit, QSpinBox, QDoubleSpinBox, QComboBox {
-                background-color: white;
-                border: 1px solid #ddd;
-                border-radius: 4px;
-                padding: 8px;
-                color: #2c3e50;
-                selection-background-color: #3498db;
-                selection-color: white;
-            }
-            QLineEdit:focus, QTextEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus {
-                border: 1px solid #3498db;
-            }
-            QPushButton {
-                background-color: #3498db;
-                color: white;
-                border: none;
-                border-radius: 4px;
-                padding: 10px 20px;
-                font-weight: bold;
-                min-width: 100px;
-            }
-            QPushButton:hover {
-                background-color: #2980b9;
-            }
-            QPushButton#cancel-btn {
-                background-color: #95a5a6;
-            }
-            QPushButton#cancel-btn:hover {
-                background-color: #7f8c8d;
-            }
-            QFormLayout > QLabel {
-                padding: 5px 0;
-            }
-        """)
+        self.setWindowTitle("Add Menu Item" if not menu_item else "Edit Menu Item")
+        self.initUI()
     
     def initUI(self):
         main_layout = QVBoxLayout(self)
@@ -2179,47 +2236,105 @@ class MenuItemDialog(QDialog):
     def save_menu_item(self):
         # Validate input
         name = self.name_input.text().strip()
+        if not name:
+            self.show_warning_message("Validation Error", "Please enter a dish name")
+            return
+            
+        # Get all the values
         description = self.description_input.toPlainText().strip()
-        category = self.category_input.currentText()
         price = self.price_input.value()
         discount_price = self.discount_input.value() if self.discount_input.value() > 0 else None
-        stock = self.stock_input.value()
+        category = self.category_input.currentText()
+        preparation_time = self.prep_time_input.value()
+        stock_quantity = self.stock_input.value()
         
-        # Automatically set availability based on stock
-        availability = "In Stock" if stock > 0 else "Out of Stock"
+        # Special dietary options
+        is_vegetarian = self.vegetarian_input.isChecked()
+        is_vegan = self.vegan_input.isChecked()
+        is_gluten_free = self.gluten_free_input.isChecked()
         
-        if not name:
-            QMessageBox.warning(self, "Validation Error", "Please enter a dish name")
-            return
+        # Determine availability based on stock
+        availability = "In Stock" if stock_quantity > 0 else "Out of Stock"
         
         try:
-            if self.menu_item:  # Update existing
+            # Prepare the query based on whether we're adding or editing
+            if self.menu_item:
+                # Update existing menu item
                 query = """
                 UPDATE menus 
-                SET dish_name = %s, description = %s, category = %s, price = %s,
-                discount_price = %s, stock_quantity = %s, availability = %s
+                SET dish_name = %s, description = %s, price = %s, discount_price = %s,
+                    category = %s, preparation_time = %s, is_vegetarian = %s,
+                    is_vegan = %s, is_gluten_free = %s, availability = %s,
+                    stock_quantity = %s
                 WHERE menu_id = %s
                 """
-                params = (name, description, category, price, discount_price, 
-                        stock, availability, self.menu_item['menu_id'])
-            else:  # Add new
+                params = (name, description, price, discount_price, category, 
+                         preparation_time, is_vegetarian, is_vegan, is_gluten_free,
+                         availability, stock_quantity, self.menu_item['menu_id'])
+            else:
+                # Insert new menu item
                 query = """
-                INSERT INTO menus 
-                (restaurant_id, dish_name, description, category, price, 
-                discount_price, stock_quantity, availability)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                INSERT INTO menus (restaurant_id, dish_name, description, price, discount_price,
+                                 category, preparation_time, is_vegetarian, is_vegan,
+                                 is_gluten_free, availability, stock_quantity)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """
-                params = (self.restaurant_id, name, description, category, 
-                        price, discount_price, stock, availability)
+                params = (self.restaurant_id, name, description, price, discount_price,
+                         category, preparation_time, is_vegetarian, is_vegan,
+                         is_gluten_free, availability, stock_quantity)
             
+            # Execute the query
             result = execute_query(query, params, fetch=False)
             
             if result is not None:
-                QMessageBox.information(self, "Success", 
-                                      "Menu item updated successfully" if self.menu_item else "Menu item added successfully")
+                self.show_info_message("Success", 
+                                  "Menu item updated successfully" if self.menu_item else "Menu item added successfully")
                 self.accept()
             else:
-                QMessageBox.critical(self, "Error", "Failed to save menu item")
+                self.show_error_message("Error", "Failed to save menu item")
                 
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"An error occurred: {str(e)}") 
+            self.show_error_message("Error", f"An error occurred: {str(e)}")
+    
+    def show_styled_message_box(self, icon, title, text):
+        """Show a styled message box that matches the app theme"""
+        msg_box = QMessageBox(self)
+        msg_box.setIcon(icon)
+        msg_box.setWindowTitle(title)
+        msg_box.setText(text)
+        
+        # Apply dark theme styling
+        msg_box.setStyleSheet("""
+            QMessageBox {
+                background-color: #2c3e50;
+                color: white;
+            }
+            QLabel {
+                color: white;
+                font-size: 14px;
+            }
+            QPushButton {
+                background-color: #3498db;
+                color: white;
+                border-radius: 4px;
+                padding: 6px 15px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #2980b9;
+            }
+        """)
+        
+        return msg_box.exec()
+        
+    def show_warning_message(self, title, text):
+        """Show styled warning message"""
+        return self.show_styled_message_box(QMessageBox.Icon.Warning, title, text)
+        
+    def show_info_message(self, title, text):
+        """Show styled information message"""
+        return self.show_styled_message_box(QMessageBox.Icon.Information, title, text)
+        
+    def show_error_message(self, title, text):
+        """Show styled error message"""
+        return self.show_styled_message_box(QMessageBox.Icon.Critical, title, text)
