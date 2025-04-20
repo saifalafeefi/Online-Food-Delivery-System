@@ -307,10 +307,6 @@ def search_orders(customer_id=None, restaurant_id=None, status=None,
         
         # Order by most recent first
         query += " ORDER BY o.order_date DESC"
-
-        # Debug the query
-        print(f"Query: {query}")
-        print(f"Params: {params}")
         
         return execute_query(query, params)
     except Exception as e:

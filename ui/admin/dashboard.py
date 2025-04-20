@@ -31,6 +31,9 @@ class AdminDashboard(QWidget):
         self.refresh_timer.timeout.connect(self.auto_refresh)
         self.refresh_timer.start(500)  # Refresh every 0.5 seconds
         
+        # Flag to track if we should skip refresh
+        self._skip_refresh = False
+        
         self.initUI()
     
     def initUI(self):
@@ -221,12 +224,14 @@ class AdminDashboard(QWidget):
         except:
             total_revenue = [{'total': 0}]
         
-        # Create stat cards with fallback data
+        # Create stat cards and store references for refreshing
+        self.stat_widgets = {}
+        
         stat_cards = [
-            {"title": "Restaurants", "value": str(restaurant_count[0]['count']), "icon": "🏢"},
-            {"title": "Active Users", "value": str(user_count[0]['count']), "icon": "👥"},
-            {"title": "Orders Today", "value": str(today_orders[0]['count']), "icon": "📦"},
-            {"title": "Total Revenue", "value": f"AED {float(total_revenue[0]['total']):.2f}", "icon": "💰"}
+            {"id": "restaurant_count", "title": "Restaurants", "value": str(restaurant_count[0]['count']), "icon": "🏢"},
+            {"id": "user_count", "title": "Active Users", "value": str(user_count[0]['count']), "icon": "👥"},
+            {"id": "today_orders", "title": "Orders Today", "value": str(today_orders[0]['count']), "icon": "📦"},
+            {"id": "total_revenue", "title": "Total Revenue", "value": f"AED {float(total_revenue[0]['total']):.2f}", "icon": "💰"}
         ]
         
         for card in stat_cards:
@@ -240,6 +245,9 @@ class AdminDashboard(QWidget):
             value = QLabel(card["value"])
             value.setObjectName("stat-value")
             value.setFont(QFont("Arial", 20, QFont.Weight.Bold))
+            
+            # Store reference to value label for refreshing
+            self.stat_widgets[card["id"] + "_value"] = value
             
             card_layout.addWidget(title)
             card_layout.addWidget(value)
@@ -1114,16 +1122,23 @@ class AdminDashboard(QWidget):
         search_btn.setObjectName("action-button")
         search_btn.clicked.connect(self.search_orders)
         
-        # Refresh button
-        refresh_btn = QPushButton("Refresh")
-        refresh_btn.setObjectName("action-button")
-        refresh_btn.clicked.connect(lambda: self.load_orders(True))
-        
         # Generate order numbers button
         backfill_btn = QPushButton("Generate Order Numbers")
         backfill_btn.setObjectName("action-button")
         backfill_btn.setToolTip("Generate order numbers for orders that don't have them")
         backfill_btn.clicked.connect(self.backfill_order_numbers)
+        
+        # Add a refresh button with timer indication
+        refresh_bar = QHBoxLayout()
+        refresh_btn = QPushButton("Refresh")
+        refresh_btn.setObjectName("action-button")
+        refresh_btn.setStyleSheet("background-color: #2ecc71; font-weight: bold;")
+        refresh_btn.clicked.connect(lambda: self.load_orders(True))
+        last_refresh_label = QLabel("Auto-refreshes every 3 seconds")
+        last_refresh_label.setAlignment(Qt.AlignmentFlag.AlignRight)
+        
+        refresh_bar.addWidget(refresh_btn)
+        refresh_bar.addWidget(last_refresh_label)
         
         # Add to layout
         search_layout.addWidget(search_label)
@@ -1135,8 +1150,8 @@ class AdminDashboard(QWidget):
         search_layout.addWidget(status_label)
         search_layout.addWidget(self.order_status_filter, 2)
         search_layout.addWidget(search_btn)
-        search_layout.addWidget(refresh_btn)
         search_layout.addWidget(backfill_btn)
+        search_layout.addLayout(refresh_bar)
         
         # Orders table
         self.orders_table = QTableWidget()
@@ -1171,21 +1186,20 @@ class AdminDashboard(QWidget):
     
     def load_orders(self, force_refresh=False, search_term=None, start_date=None, end_date=None, status=None):
         """Load orders with optional filtering"""
-        # Clear existing rows
-        self.orders_table.setRowCount(0)
-        
         try:
             # Get orders from database with filters
             from db_utils import search_orders
             
-            # Debug
-            print(f"Searching orders with term: '{search_term}', status: {status}, dates: {start_date} to {end_date}")
+            # Reduce debug output - only show meaningful info, not every refresh
+            if force_refresh:
+                print(f"Searching orders with term: '{search_term}', status: {status}, dates: {start_date} to {end_date}")
             
             # Check if search_term contains order number
             order_number = None
             if search_term and search_term.strip():
                 order_number = search_term
-                print(f"Searching for order number: {order_number}")
+                if force_refresh:
+                    print(f"Searching for order number: {order_number}")
             
             orders = search_orders(
                 customer_name=search_term,
@@ -1196,23 +1210,47 @@ class AdminDashboard(QWidget):
             )
             
             if not orders:
-                print("No orders found matching the criteria")
+                if force_refresh:
+                    print("No orders found matching the criteria")
                 self.display_no_data_message(self.orders_table, "No orders found")
                 return
             
-            print(f"Found {len(orders)} orders")
+            # Only log this for manual refreshes to reduce spam
+            if force_refresh:
+                print(f"Found {len(orders)} orders")
             
-            # Load data
-            for row, order in enumerate(orders):
-                self.orders_table.insertRow(row)
-                
-                # For debugging
-                print(f"Order data: ID={order['order_id']}, Number={order.get('order_number', 'N/A')}")
-                
-                # Order number - use order_id if order_number is None or empty
+            # Smart updating - avoid flickering by checking what's already there
+            # Store the current orders in the table
+            current_order_ids = {}
+            for row in range(self.orders_table.rowCount()):
+                # Get order number from the first column
+                order_cell = self.orders_table.item(row, 0)
+                if order_cell:
+                    current_order_ids[order_cell.text()] = row
+            
+            # Process new orders
+            for order in orders:
+                # Get order number/id for tracking
                 order_num = order.get('order_number', '')
                 if not order_num or order_num.strip() == '':
-                    order_num = str(order['order_id']) 
+                    order_num = str(order['order_id'])
+                
+                # Only print for manual refreshes to reduce spam
+                if force_refresh:
+                    print(f"Order data: ID={order['order_id']}, Number={order.get('order_number', 'N/A')}")
+                    
+                # Check if this order is already in the table
+                if order_num in current_order_ids:
+                    # Update existing row
+                    row = current_order_ids[order_num]
+                    # Remove from tracking dict to mark as processed
+                    del current_order_ids[order_num]
+                else:
+                    # Add new row
+                    row = self.orders_table.rowCount()
+                    self.orders_table.insertRow(row)
+                
+                # Update the order data in this row
                 self.orders_table.setItem(row, 0, QTableWidgetItem(order_num))
                 
                 # Date
@@ -1259,26 +1297,21 @@ class AdminDashboard(QWidget):
                 view_btn.setObjectName("action-button")
                 view_btn.clicked.connect(lambda checked, o=order['order_id']: self.view_order_details(o))
                 
-                # Add buttons to layout
+                # Add view button to layout
                 actions_layout.addWidget(view_btn)
                 
-                # Only add update/cancel buttons for non-completed orders
-                if order['delivery_status'] not in ['Delivered', 'Cancelled']:
-                    status_update = QComboBox()
-                    status_update.addItems(['Update Status', 'Confirmed', 'Preparing', 'On Delivery', 'Delivered', 'Cancelled'])
-                    status_update.setCurrentIndex(0)
-                    status_update.currentTextChanged.connect(
-                        lambda text, oid=order['order_id'], box=status_update: 
-                        self.update_order_status(oid, text) if text != 'Update Status' else None
-                    )
-                    
-                    actions_layout.addWidget(status_update)
-                
                 self.orders_table.setCellWidget(row, 7, actions_widget)
+            
+            # Remove any rows in the table that weren't in the query results
+            # Process in reverse order to avoid index shifting issues
+            rows_to_remove = sorted(current_order_ids.values(), reverse=True)
+            for row in rows_to_remove:
+                self.orders_table.removeRow(row)
                 
         except Exception as e:
             error_msg = f"Failed to load orders: {str(e)}"
-            print(error_msg)  # Log to console
+            if force_refresh:
+                print(error_msg)  # Log to console only for manual refreshes
             self.display_db_error_message(self.orders_table, error_msg)
     
     def view_order_details(self, order_id):
@@ -1505,6 +1538,103 @@ class AdminDashboard(QWidget):
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to load order details: {str(e)}")
             print(f"Error loading order details: {e}")
+    
+    def update_order_status(self, order_id, new_status):
+        """Update an order's status and payment status if needed"""
+        try:
+            # Map UI status names to database enum values if needed
+            status_db_map = {
+                "Confirmed": "Confirmed",
+                "Preparing": "Preparing",
+                "On Delivery": "On Delivery",
+                "Delivered": "Delivered",
+                "Cancelled": "Cancelled"
+            }
+            
+            # Get the database enum value
+            db_status = status_db_map.get(new_status, new_status)
+            
+            # Special handling for cancelled orders to restore stock
+            if new_status == "Cancelled":
+                # First check if we need to restore stock
+                order_items = execute_query("""
+                    SELECT oi.menu_id, oi.quantity 
+                    FROM order_items oi 
+                    WHERE oi.order_id = %s
+                """, (order_id,))
+                
+                # Update order status to Cancelled
+                status_query = "UPDATE orders SET delivery_status = 'Cancelled' WHERE order_id = %s"
+                execute_query(status_query, (order_id,), fetch=False)
+                
+                # Restore stock for each item
+                for item in order_items:
+                    menu_id = item['menu_id']
+                    quantity = item['quantity']
+                    
+                    # Get current stock
+                    current_stock = execute_query(
+                        "SELECT stock_quantity FROM menus WHERE menu_id = %s", 
+                        (menu_id,)
+                    )
+                    
+                    if current_stock:
+                        new_stock = current_stock[0]['stock_quantity'] + quantity
+                        
+                        # Update stock
+                        execute_query(
+                            "UPDATE menus SET stock_quantity = %s WHERE menu_id = %s",
+                            (new_stock, menu_id),
+                            fetch=False
+                        )
+                        
+                QMessageBox.information(self, "Order Cancelled", f"Order #{order_id} has been cancelled and stock quantities have been restored.")
+                self.load_orders()  # Refresh orders
+                return
+                
+            # Check if changing status to "Delivered"
+            if db_status == "Delivered":
+                # When an order is delivered, also update payment status for Cash on Delivery orders
+                # First check payment method
+                payment_query = """
+                    SELECT payment_method, payment_status FROM orders 
+                    WHERE order_id = %s
+                """
+                payment_info = execute_query(payment_query, (order_id,))
+                
+                if payment_info and payment_info[0]['payment_method'] == 'Cash on Delivery':
+                    # Update both delivery status and payment status
+                    query = """
+                        UPDATE orders 
+                        SET delivery_status = %s, 
+                            actual_delivery_time = NOW(),
+                            payment_status = 'Paid'
+                        WHERE order_id = %s
+                    """
+                else:
+                    # For other payment methods, also ensure payment status is marked as Paid
+                    query = """
+                        UPDATE orders 
+                        SET delivery_status = %s, 
+                            actual_delivery_time = NOW(),
+                            payment_status = 'Paid'
+                        WHERE order_id = %s
+                    """
+            else:
+                # Regular status update for non-delivered orders
+                query = "UPDATE orders SET delivery_status = %s WHERE order_id = %s"
+            
+            # Execute the query    
+            result = execute_query(query, (db_status, order_id), fetch=False)
+            
+            if result is not None:
+                QMessageBox.information(self, "Success", f"Order #{order_id} status updated to {new_status}")
+                # Refresh orders
+                self.load_orders()
+            else:
+                QMessageBox.warning(self, "Error", "Failed to update order status")
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to update order status: {str(e)}")
     
     def create_reports_page(self):
         page = QWidget()
@@ -2836,25 +2966,94 @@ class AdminDashboard(QWidget):
             if QApplication.mouseButtons() != Qt.MouseButton.NoButton:
                 return
                 
+            if self._skip_refresh:
+                return
+                
+            # Get current page and refresh data accordingly
             current_widget = self.content_area.currentWidget()
             
-            # Refresh different pages with real-time data
-            if current_widget == self.dashboard_page:
-                # We'll just update the orders stats which change frequently
-                try:
-                    today_orders = execute_query("SELECT COUNT(*) as count FROM orders WHERE DATE(order_time) = CURDATE()")
-                    if today_orders and hasattr(self, 'today_orders_value'):
-                        self.today_orders_value.setText(str(today_orders[0]['count']))
-                except Exception as e:
-                    print(f"Dashboard auto-refresh error: {e}")
-            elif current_widget == self.orders_page:
-                # Only refresh orders if no search is being performed
-                if hasattr(self, 'order_search_input') and not self.order_search_input.text().strip():
-                    self.load_orders(force_refresh=True)
+            # Dashboard stats refresh - always do this
+            if hasattr(self, 'today_orders_value'):
+                # Create a counter for dashboard stats so they don't refresh too often
+                if not hasattr(self, '_dashboard_refresh_counter'):
+                    self._dashboard_refresh_counter = 0
+                
+                self._dashboard_refresh_counter += 1
+                if self._dashboard_refresh_counter >= 6:  # Every 3 seconds
+                    self._dashboard_refresh_counter = 0
+                    try:
+                        today_orders = execute_query("SELECT COUNT(*) as count FROM orders WHERE DATE(order_time) = CURDATE()")
+                        if today_orders:
+                            self.today_orders_value.setText(str(today_orders[0]['count']))
+                    except Exception as e:
+                        print(f"Error refreshing dashboard stats: {e}")
+            
+            # For the orders page, throttle refreshes to reduce flicker
+            if current_widget == self.orders_page:
+                # Create/initialize the orders refresh counter
+                if not hasattr(self, '_orders_refresh_counter'):
+                    self._orders_refresh_counter = 0
+                
+                # Only refresh orders every 3 cycles for better UX
+                self._orders_refresh_counter += 1
+                if self._orders_refresh_counter >= 3:  # Every 1.5 seconds
+                    self._orders_refresh_counter = 0
+                    
+                    # Only refresh if no search filter is active
+                    if hasattr(self, 'orders_search_input') and not self.orders_search_input.text().strip():
+                        self._skip_refresh = True  # Prevent refresh loops
+                        self.load_orders(force_refresh=False)  # Pass force_refresh=False to reduce logging
+                        self._skip_refresh = False
+            
+            # For delivery personnel, throttle refreshes
             elif current_widget == self.delivery_page:
-                # Check if we need to refresh active deliveries
-                if hasattr(self, 'status_filter') and self.status_filter.currentText() in ["All Status", "On Delivery"]:
-                    self.load_delivery_personnel(self.status_filter.currentText())
+                # Create/initialize the delivery refresh counter
+                if not hasattr(self, '_delivery_refresh_counter'):
+                    self._delivery_refresh_counter = 0
+                
+                # Only refresh delivery personnel every 3 cycles
+                self._delivery_refresh_counter += 1
+                if self._delivery_refresh_counter >= 3:  # Every 1.5 seconds
+                    self._delivery_refresh_counter = 0
+                    
+                    # Refresh delivery personnel
+                    if hasattr(self, 'status_filter'):
+                        self._skip_refresh = True
+                        self.load_delivery_personnel(self.status_filter.currentText())
+                        self._skip_refresh = False
+            
+            # Dashboard page refresh
+            elif current_widget == self.dashboard_page:
+                # Refresh dashboard without counter to ensure real-time updates
+                self._skip_refresh = True
+                self.refresh_dashboard_stats()
+                
+                # Refresh analytics if needed, but less frequently
+                if not hasattr(self, '_analytics_refresh_counter'):
+                    self._analytics_refresh_counter = 0
+                
+                self._analytics_refresh_counter += 1
+                if self._analytics_refresh_counter >= 10:  # Every 5 seconds for analytics
+                    self._analytics_refresh_counter = 0
+                    if hasattr(self, 'refresh_analytics'):
+                        self.refresh_analytics()
+                
+                self._skip_refresh = False
+            
+            # For other pages, refresh less frequently
+            elif current_widget == self.restaurants_page:
+                # Refresh other pages every 10 cycles (5 seconds)
+                if not hasattr(self, '_restaurants_refresh_counter'):
+                    self._restaurants_refresh_counter = 0
+                
+                self._restaurants_refresh_counter += 1
+                if self._restaurants_refresh_counter >= 10:  # Every 5 seconds
+                    self._restaurants_refresh_counter = 0
+                    
+                    self._skip_refresh = True
+                    self.load_restaurants()
+                    self._skip_refresh = False
+                
         except Exception as e:
             # Silent exception handling for auto-refresh
             print(f"Auto-refresh error in admin dashboard: {e}")
@@ -2946,6 +3145,72 @@ class AdminDashboard(QWidget):
                 "Error",
                 f"Failed to generate order numbers: {str(e)}"
             )
+    
+    def refresh_dashboard_stats(self):
+        """Refresh all dashboard statistics and recent orders"""
+        try:
+            # Update restaurant count
+            restaurant_count = execute_query("SELECT COUNT(*) as count FROM restaurants")
+            if restaurant_count and hasattr(self, 'stat_widgets') and 'restaurant_count_value' in self.stat_widgets:
+                self.stat_widgets['restaurant_count_value'].setText(str(restaurant_count[0]['count']))
+            
+            # Update user count
+            user_count = execute_query("SELECT COUNT(*) as count FROM users WHERE role = 'customer'")
+            if user_count and hasattr(self, 'stat_widgets') and 'user_count_value' in self.stat_widgets:
+                self.stat_widgets['user_count_value'].setText(str(user_count[0]['count']))
+            
+            # Update today's orders
+            today_orders = execute_query("SELECT COUNT(*) as count FROM orders WHERE DATE(order_time) = CURDATE()")
+            if today_orders and hasattr(self, 'stat_widgets') and 'today_orders_value' in self.stat_widgets:
+                self.stat_widgets['today_orders_value'].setText(str(today_orders[0]['count']))
+            
+            # Update total revenue
+            revenue = execute_query("SELECT SUM(total_amount) as total FROM orders WHERE delivery_status = 'Delivered'")
+            if revenue and revenue[0]['total'] and hasattr(self, 'stat_widgets') and 'total_revenue_value' in self.stat_widgets:
+                self.stat_widgets['total_revenue_value'].setText(f"AED {float(revenue[0]['total']):.2f}")
+            elif hasattr(self, 'stat_widgets') and 'total_revenue_value' in self.stat_widgets:
+                self.stat_widgets['total_revenue_value'].setText("AED 0.00")
+            
+            # Update recent orders table
+            if hasattr(self, 'recent_orders_table'):
+                recent_orders = execute_query("""
+                    SELECT o.order_id, c.name as customer_name, r.name as restaurant_name, 
+                        o.total_amount, o.delivery_status 
+                    FROM orders o
+                    JOIN customers c ON o.customer_id = c.customer_id
+                    JOIN restaurants r ON o.restaurant_id = r.restaurant_id
+                    ORDER BY o.order_time DESC
+                    LIMIT 5
+                """)
+                
+                if recent_orders:
+                    # Store current row count
+                    current_row_count = self.recent_orders_table.rowCount()
+                    new_row_count = len(recent_orders)
+                    
+                    # Adjust table rows if needed
+                    if current_row_count != new_row_count:
+                        self.recent_orders_table.setRowCount(new_row_count)
+                    
+                    # Update table data
+                    for i, order in enumerate(recent_orders):
+                        self.recent_orders_table.setItem(i, 0, QTableWidgetItem(str(order['order_id'])))
+                        self.recent_orders_table.setItem(i, 1, QTableWidgetItem(order['customer_name']))
+                        self.recent_orders_table.setItem(i, 2, QTableWidgetItem(order['restaurant_name']))
+                        self.recent_orders_table.setItem(i, 3, QTableWidgetItem(f"AED {float(order['total_amount']):.2f}"))
+                        
+                        status_item = QTableWidgetItem(order['delivery_status'])
+                        if order['delivery_status'] == 'Delivered':
+                            status_item.setForeground(Qt.GlobalColor.darkGreen)
+                        elif order['delivery_status'] == 'Cancelled':
+                            status_item.setForeground(Qt.GlobalColor.red)
+                        elif order['delivery_status'] in ['Preparing', 'On Delivery']:
+                            status_item.setForeground(Qt.GlobalColor.blue)
+                        
+                        self.recent_orders_table.setItem(i, 4, status_item)
+        except Exception as e:
+            # Silent exception handling for dashboard refresh
+            pass
 
 
 class RestaurantDialog(QDialog):

@@ -1194,13 +1194,21 @@ class CustomerDashboard(QWidget):
             # Create order with all required fields
             order_query = """
             INSERT INTO orders (customer_id, restaurant_id, subtotal, total_amount, 
-                               delivery_status, payment_method, delivery_address)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
+                               delivery_status, payment_method, delivery_address, payment_status)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             """
+            
+            # Set payment status based on payment method
+            payment_method = self.payment_method.currentText()
+            if payment_method in ["Credit Card", "Digital Wallet"]:
+                payment_status = "Paid"
+            else:  # Cash on Delivery
+                payment_status = "Pending"
+                
             order_id = execute_query(
                 order_query, 
                 (customer_id, restaurant_id, subtotal, total, 
-                 "Pending", self.payment_method.currentText(), address), 
+                 "Pending", payment_method, address, payment_status), 
                 fetch=False
             )
             
@@ -2248,5 +2256,3 @@ class CustomerDashboard(QWidget):
             # Silent exception handling for auto-refresh
             print(f"Auto-refresh error in customer dashboard: {e}")
             # Don't show error to user since this runs automatically
-
-# ... rest of file unchanged ... 

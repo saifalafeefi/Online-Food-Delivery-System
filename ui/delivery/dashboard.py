@@ -1302,13 +1302,50 @@ class DeliveryDashboard(QWidget):
     def complete_delivery(self, order_id):
         """Mark a delivery as completed"""
         try:
-            # Update the order status to "Delivered" and set actual_delivery_time
+            # First check the payment method
+            payment_query = """
+                SELECT payment_method, payment_status FROM orders 
+                WHERE order_id = %s
+            """
+            payment_info = execute_query(payment_query, (order_id,))
+            
+            if not payment_info:
+                msg = QMessageBox()
+                msg.setIcon(QMessageBox.Icon.Warning)
+                msg.setWindowTitle("Error")
+                msg.setText("Could not retrieve order information.")
+                msg.setStyleSheet("""
+                    QMessageBox {
+                        background-color: #2c3e50;
+                    }
+                    QLabel {
+                        color: white;
+                        font-size: 14px;
+                    }
+                    QPushButton {
+                        background-color: #3498db;
+                        color: white;
+                        padding: 6px 12px;
+                        border-radius: 4px;
+                        border: none;
+                    }
+                    QPushButton:hover {
+                        background-color: #2980b9;
+                    }
+                """)
+                msg.exec()
+                return
+                
+            # Always update payment status to 'Paid' for ALL delivery methods when order is completed
+            # This ensures consistency across the system
             query = """
                 UPDATE orders 
                 SET delivery_status = %s, 
-                    actual_delivery_time = NOW()
+                    actual_delivery_time = NOW(),
+                    payment_status = 'Paid'
                 WHERE order_id = %s
             """
+            
             result = execute_query(query, ("Delivered", order_id), fetch=False)
             
             if result is not None:
@@ -1389,50 +1426,33 @@ class DeliveryDashboard(QWidget):
             if QApplication.mouseButtons() != Qt.MouseButton.NoButton:
                 return
             
-            # Use a static counter to limit how often we refresh
-            # This prevents the console from being spammed with messages
-            if not hasattr(self, '_refresh_counter'):
-                self._refresh_counter = 0
-            
-            self._refresh_counter += 1
-            if self._refresh_counter >= 6:  # Only refresh every ~3 seconds (6 * 0.5s = 3s)
-                self._refresh_counter = 0
-                
-                current_widget = self.content_area.currentWidget()
-                if current_widget == self.new_orders_page:
-                    self.load_new_orders()
-                elif current_widget == self.active_deliveries_page:
-                    self.load_active_deliveries()
-        except Exception as e:
-            # Silent exception handling for auto-refresh
-            # Don't show error to user since this runs automatically
-            pass
-    
-    def auto_refresh(self):
-        """Automatically refresh data based on current page"""
-        try:
-            # Skip refresh if mouse button is pressed to prevent click interference
-            from PySide6.QtWidgets import QApplication
-            from PySide6.QtCore import Qt
-            
-            if QApplication.mouseButtons() != Qt.MouseButton.NoButton:
+            # Skip if no delivery person ID is set yet
+            if not self.delivery_person_id:
                 return
-            
-            # Use a static counter to limit how often we refresh
-            # This prevents the console from being spammed with messages
-            if not hasattr(self, '_refresh_counter'):
-                self._refresh_counter = 0
-            
-            self._refresh_counter += 1
-            if self._refresh_counter >= 6:  # Only refresh every ~3 seconds (6 * 0.5s = 3s)
-                self._refresh_counter = 0
                 
-                current_widget = self.content_area.currentWidget()
-                if current_widget == self.new_orders_page:
-                    self.load_new_orders()
-                elif current_widget == self.active_deliveries_page:
-                    self.load_active_deliveries()
+            current_widget = self.content_area.currentWidget()
+            
+            # For real-time sensitive pages, refresh every cycle
+            if current_widget == self.new_orders_page:
+                # New orders should refresh in real-time
+                self.load_new_orders()
+            elif current_widget == self.active_deliveries_page:
+                # Active deliveries should also refresh in real-time
+                self.load_active_deliveries()
+            elif current_widget == self.delivery_history_page or current_widget == self.earnings_page:
+                # These pages change less frequently, so refresh them less often
+                if not hasattr(self, '_slow_refresh_counter'):
+                    self._slow_refresh_counter = 0
+                
+                self._slow_refresh_counter += 1
+                if self._slow_refresh_counter >= 10:  # Refresh every 5 seconds (10 * 0.5s)
+                    self._slow_refresh_counter = 0
+                    
+                    if current_widget == self.delivery_history_page:
+                        self.load_delivery_history()
+                    elif current_widget == self.earnings_page:
+                        self.load_earnings()
         except Exception as e:
             # Silent exception handling for auto-refresh
-            # Don't show error to user since this runs automatically
-            pass 
+            print(f"Auto-refresh error in delivery dashboard: {e}")
+            # Don't show error to user since this runs automatically 

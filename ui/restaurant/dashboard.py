@@ -39,7 +39,7 @@ class RestaurantDashboard(QWidget):
         
         # Set up auto-refresh timer for orders
         self.refresh_timer = QTimer(self)
-        self.refresh_timer.setInterval(60000)  # 60 seconds
+        self.refresh_timer.setInterval(500)  # 0.5 seconds for real-time updates
         self.refresh_timer.timeout.connect(self.auto_refresh)
         self.refresh_timer.start()
         
@@ -605,13 +605,19 @@ class RestaurantDashboard(QWidget):
                 reject_btn.clicked.connect(lambda: self.update_order_status(order['order_id'], "Cancelled"))
                 
                 buttons_layout.addWidget(accept_btn)
-            else:
-                # Already confirmed, just start preparing
+                buttons_layout.addWidget(reject_btn)
+            elif order['delivery_status'] == "Confirmed":
+                # Already confirmed, add prepare and cancel buttons
                 prepare_btn = QPushButton("Start Preparing")
                 prepare_btn.setObjectName("action-button")
                 prepare_btn.clicked.connect(lambda: self.update_order_status(order['order_id'], "Preparing"))
                 
+                cancel_btn = QPushButton("Cancel Order")
+                cancel_btn.setObjectName("delete-button")
+                cancel_btn.clicked.connect(lambda: self.update_order_status(order['order_id'], "Cancelled"))
+                
                 buttons_layout.addWidget(prepare_btn)
+                buttons_layout.addWidget(cancel_btn)
         
         elif tab_status == "Preparing":
             # For orders in preparation
@@ -619,7 +625,12 @@ class RestaurantDashboard(QWidget):
             ready_btn.setObjectName("action-button")
             ready_btn.clicked.connect(lambda: self.update_order_status(order['order_id'], "Ready for Pickup"))
             
+            cancel_btn = QPushButton("Cancel Order")
+            cancel_btn.setObjectName("delete-button")
+            cancel_btn.clicked.connect(lambda: self.update_order_status(order['order_id'], "Cancelled"))
+            
             buttons_layout.addWidget(ready_btn)
+            buttons_layout.addWidget(cancel_btn)
         
         # Add all components to card
         card_layout.addLayout(header_layout)
@@ -662,7 +673,20 @@ class RestaurantDashboard(QWidget):
         
         # Regular status update for non-cancelled orders
         try:
-            query = "UPDATE orders SET delivery_status = %s WHERE order_id = %s"
+            # Check if the order is being marked as "Delivered" (which is "Completed" in the UI)
+            if db_status == "Delivered":
+                # When an order is delivered, also update payment status to 'Paid'
+                query = """
+                    UPDATE orders 
+                    SET delivery_status = %s,
+                        actual_delivery_time = NOW(),
+                        payment_status = 'Paid'
+                    WHERE order_id = %s
+                """
+            else:
+                # Regular status update for non-delivered orders
+                query = "UPDATE orders SET delivery_status = %s WHERE order_id = %s"
+            
             result = execute_query(query, (db_status, order_id), fetch=False)
             
             if result is not None:
@@ -2038,21 +2062,43 @@ class RestaurantDashboard(QWidget):
             
             if QApplication.mouseButtons() != Qt.MouseButton.NoButton:
                 return
+            
+            # Skip if no restaurant ID is set yet
+            if not self.restaurant_id:
+                return
                 
             current_widget = self.content_area.currentWidget()
             
             # Only refresh certain pages that need real-time updates
             if current_widget == self.orders_page:
-                # Refresh all orders
-                self.load_all_orders()
+                # Only refresh orders that might have changed (pending, confirmed, preparing, on delivery)
+                # This is more efficient than refreshing all orders every time
+                self.refresh_active_orders()
             elif current_widget == self.dashboard_page:
-                # Refresh dashboard stats
-                self.load_dashboard_stats()
+                # For dashboard, we can refresh less frequently for better performance
+                # Using a counter to refresh dashboard stats less frequently (every ~5 seconds)
+                if not hasattr(self, '_dashboard_refresh_counter'):
+                    self._dashboard_refresh_counter = 0
+                
+                self._dashboard_refresh_counter += 1
+                if self._dashboard_refresh_counter >= 10:  # Refresh every 10 cycles (5 seconds)
+                    self.load_dashboard_stats()
+                    self._dashboard_refresh_counter = 0
         except Exception as e:
             # Silent exception handling for auto-refresh
             print(f"Auto-refresh error in restaurant dashboard: {e}")
             # Don't show error to user since this runs automatically
-
+            
+    def refresh_active_orders(self):
+        """Refresh only the active orders that are likely to change frequently"""
+        try:
+            # Only refresh tabs with active orders
+            active_tabs = ['New', 'Preparing', 'Ready for Pickup']
+            for tab_status in active_tabs:
+                self.load_orders_for_tab(tab_status)
+        except Exception as e:
+            print(f"Error refreshing active orders: {e}")
+    
     def load_orders_for_tab(self, tab_status):
         """Load orders for a specific tab"""
         if not self.restaurant_id:
