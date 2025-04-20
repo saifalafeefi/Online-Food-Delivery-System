@@ -27,6 +27,20 @@ class LoginWindow(QWidget):
         
         # Logo/Header Section
         header_layout = QVBoxLayout()
+        
+        # Add logo
+        logo_label = QLabel()
+        logo_pixmap = QPixmap("images/logo.png")
+        if not logo_pixmap.isNull():
+            # Scale logo to reasonable size if needed
+            logo_pixmap = logo_pixmap.scaled(200, 200, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+            logo_label.setPixmap(logo_pixmap)
+            logo_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            header_layout.addWidget(logo_label)
+            header_layout.addSpacing(10)
+        else:
+            print("Warning: Logo image not found at images/logo.png")
+        
         title = QLabel("Food Delivery")
         title.setObjectName("app-title")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -223,6 +237,18 @@ class RegisterWindow(QWidget):
         
         # Logo/Header Section
         header_layout = QVBoxLayout()
+        
+        # Add logo
+        logo_label = QLabel()
+        logo_pixmap = QPixmap("images/logo.png")
+        if not logo_pixmap.isNull():
+            # Scale logo to reasonable size if needed
+            logo_pixmap = logo_pixmap.scaled(200, 200, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+            logo_label.setPixmap(logo_pixmap)
+            logo_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            header_layout.addWidget(logo_label)
+            header_layout.addSpacing(10)
+        
         title = QLabel("Food Delivery")
         title.setObjectName("app-title")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
