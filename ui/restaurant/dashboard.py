@@ -2291,16 +2291,10 @@ class MenuItemDialog(QDialog):
         price = self.price_input.value()
         discount_price = self.discount_input.value() if self.discount_input.value() > 0 else None
         category = self.category_input.currentText()
-        preparation_time = self.prep_time_input.value()
         stock_quantity = self.stock_input.value()
         
-        # Special dietary options
-        is_vegetarian = self.vegetarian_input.isChecked()
-        is_vegan = self.vegan_input.isChecked()
-        is_gluten_free = self.gluten_free_input.isChecked()
-        
-        # Determine availability based on stock
-        availability = "In Stock" if stock_quantity > 0 else "Out of Stock"
+        # Determine availability from dropdown
+        availability = self.availability_input.currentText()
         
         try:
             # Prepare the query based on whether we're adding or editing
@@ -2309,25 +2303,20 @@ class MenuItemDialog(QDialog):
                 query = """
                 UPDATE menus 
                 SET dish_name = %s, description = %s, price = %s, discount_price = %s,
-                    category = %s, preparation_time = %s, is_vegetarian = %s,
-                    is_vegan = %s, is_gluten_free = %s, availability = %s,
-                    stock_quantity = %s
+                    category = %s, availability = %s, stock_quantity = %s
                 WHERE menu_id = %s
                 """
                 params = (name, description, price, discount_price, category, 
-                         preparation_time, is_vegetarian, is_vegan, is_gluten_free,
                          availability, stock_quantity, self.menu_item['menu_id'])
             else:
                 # Insert new menu item
                 query = """
                 INSERT INTO menus (restaurant_id, dish_name, description, price, discount_price,
-                                 category, preparation_time, is_vegetarian, is_vegan,
-                                 is_gluten_free, availability, stock_quantity)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                 category, availability, stock_quantity)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                 """
                 params = (self.restaurant_id, name, description, price, discount_price,
-                         category, preparation_time, is_vegetarian, is_vegan,
-                         is_gluten_free, availability, stock_quantity)
+                         category, availability, stock_quantity)
             
             # Execute the query
             result = execute_query(query, params, fetch=False)
