@@ -483,6 +483,24 @@ class CustomerDashboard(QWidget):
             #view-details-btn:hover {
                 background-color: #2980b9;
             }
+            
+            /* Quantity Button Styling */
+            #quantity-btn {
+                background-color: #dfe6e9;
+                color: #2c3e50;
+                border-radius: 4px;
+                font-weight: bold;
+                padding: 2px;
+                min-width: 25px;
+                max-width: 25px;
+            }
+            #quantity-btn:hover {
+                background-color: #b2bec3;
+            }
+            #quantity-btn:disabled {
+                background-color: #f1f1f1;
+                color: #95a5a6;
+            }
         """)
         
         # Start with home page
@@ -894,6 +912,24 @@ class CustomerDashboard(QWidget):
         self.content_area.setCurrentWidget(restaurant_view)
     
     def handle_add_to_cart(self, menu_item, quantity):
+        # Check if cart is not empty and item is from a different restaurant
+        if self.cart_items and self.cart_items[0]['menu_item']['restaurant_id'] != menu_item['restaurant_id']:
+            # Show confirmation dialog
+            reply = QMessageBox.question(
+                self,
+                "Cart Items From Different Restaurant",
+                f"Your cart contains items from a different restaurant. Adding this item will clear your current cart. Continue?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No
+            )
+            
+            if reply == QMessageBox.StandardButton.Yes:
+                # Clear cart and continue
+                self.cart_items = []
+            else:
+                # User chose not to clear cart, abort adding new item
+                return
+        
         # Check if item already in cart
         total_quantity = quantity
         for item in self.cart_items:
@@ -962,22 +998,67 @@ class CustomerDashboard(QWidget):
             price_item = QTableWidgetItem(f"AED {unit_price:.2f}")
             self.cart_table.setItem(i, 1, price_item)
             
-            # Quantity
-            quantity_item = QTableWidgetItem(str(quantity))
-            self.cart_table.setItem(i, 2, quantity_item)
+            # Quantity with +/- controls
+            quantity_widget = QWidget()
+            quantity_layout = QHBoxLayout(quantity_widget)
+            quantity_layout.setContentsMargins(0, 0, 0, 0)
+            
+            # Decrease button
+            decrease_btn = QPushButton("-")
+            decrease_btn.setFixedWidth(25)
+            decrease_btn.setObjectName("quantity-btn")
+            decrease_btn.setEnabled(quantity > 1)  # Disable if quantity is 1
+            decrease_btn.clicked.connect(lambda _, idx=i: self.adjust_quantity(idx, -1))
+            
+            # Quantity label
+            quantity_label = QLabel(str(quantity))
+            quantity_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            quantity_label.setFixedWidth(30)
+            
+            # Increase button
+            increase_btn = QPushButton("+")
+            increase_btn.setFixedWidth(25)
+            increase_btn.setObjectName("quantity-btn")
+            # Disable if at max stock
+            increase_btn.setEnabled(quantity < menu_item['stock_quantity'])
+            increase_btn.clicked.connect(lambda _, idx=i: self.adjust_quantity(idx, 1))
+            
+            quantity_layout.addWidget(decrease_btn)
+            quantity_layout.addWidget(quantity_label)
+            quantity_layout.addWidget(increase_btn)
+            
+            self.cart_table.setCellWidget(i, 2, quantity_widget)
             
             # Total
             total_item = QTableWidgetItem(f"AED {item_total:.2f}")
             self.cart_table.setItem(i, 3, total_item)
             
             # Remove button
+            actions_widget = QWidget()
+            actions_layout = QHBoxLayout(actions_widget)
+            actions_layout.setContentsMargins(5, 0, 5, 0)
+            
             remove_btn = QPushButton("Remove")
             remove_btn.setObjectName("delete-button")
             remove_btn.clicked.connect(lambda _, idx=i: self.remove_from_cart(idx))
-            self.cart_table.setCellWidget(i, 4, remove_btn)
+            
+            actions_layout.addWidget(remove_btn)
+            self.cart_table.setCellWidget(i, 4, actions_widget)
         
         # Update total label
         self.cart_total_label.setText(f"Total: AED {total:.2f}")
+    
+    def adjust_quantity(self, index, change):
+        """Adjust quantity of item in cart (+/- 1)"""
+        if 0 <= index < len(self.cart_items):
+            cart_item = self.cart_items[index]
+            new_quantity = cart_item['quantity'] + change
+            
+            # Make sure quantity stays between 1 and available stock
+            menu_item = cart_item['menu_item']
+            if 1 <= new_quantity <= menu_item['stock_quantity']:
+                cart_item['quantity'] = new_quantity
+                self.update_cart_display()
     
     def remove_from_cart(self, index):
         if 0 <= index < len(self.cart_items):
@@ -1026,6 +1107,21 @@ class CustomerDashboard(QWidget):
             quantity = item['quantity']
             unit_price = float(menu_item['discount_price'] if menu_item['discount_price'] else menu_item['price'])
             total += unit_price * quantity
+        
+        # Get restaurant info and check minimum order amount
+        restaurant_id = self.cart_items[0]['menu_item']['restaurant_id']
+        restaurant = execute_query("SELECT * FROM restaurants WHERE restaurant_id = %s", (restaurant_id,))[0]
+        
+        # Check if order meets minimum order amount
+        if 'min_order_amount' in restaurant and restaurant['min_order_amount'] and float(restaurant['min_order_amount']) > 0:
+            min_amount = float(restaurant['min_order_amount'])
+            if total < min_amount:
+                QMessageBox.warning(
+                    self, 
+                    "Minimum Order Amount Not Met",
+                    f"This restaurant requires a minimum order of AED {min_amount:.2f}. Your current total is AED {total:.2f}."
+                )
+                return
         
         # Create checkout dialog
         dialog = QDialog(self)

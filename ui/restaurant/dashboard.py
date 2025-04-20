@@ -37,6 +37,11 @@ class RestaurantDashboard(QWidget):
         # Load restaurant data
         self.load_restaurant_profile()
         
+        # If this is a new restaurant owner without a profile, redirect to the profile page
+        if not self.restaurant_id:
+            # Use QTimer to ensure UI is fully initialized before showing the message
+            QTimer.singleShot(100, self.prompt_profile_setup)
+        
         # Set up auto-refresh timer for orders
         self.refresh_timer = QTimer(self)
         self.refresh_timer.setInterval(500)  # 0.5 seconds for real-time updates
@@ -81,7 +86,7 @@ class RestaurantDashboard(QWidget):
             {"text": "Dashboard", "icon": "📊", "slot": self.show_dashboard},
             {"text": "Orders", "icon": "📦", "slot": self.manage_orders},
             {"text": "Menu", "icon": "🍽️", "slot": self.manage_menu},
-            {"text": "Restaurant Profile", "icon": "🏢", "slot": self.edit_profile},
+            {"text": "Restaurant Profile", "icon": "🏢", "slot": self.show_profile_page},
             {"text": "Reports", "icon": "📈", "slot": self.view_reports}
         ]
         
@@ -1343,14 +1348,14 @@ class RestaurantDashboard(QWidget):
         msg_box.setText(text)
         msg_box.setStandardButtons(buttons)
         
-        # Apply dark theme styling
+        # Apply light theme styling
         msg_box.setStyleSheet("""
             QMessageBox {
-                background-color: #2c3e50;
-                color: white;
+                background-color: #f8f9fa;
+                color: #2c3e50;
             }
             QLabel {
-                color: white;
+                color: #2c3e50;
                 font-size: 14px;
             }
             QPushButton {
@@ -1362,9 +1367,6 @@ class RestaurantDashboard(QWidget):
             }
             QPushButton:hover {
                 background-color: #2980b9;
-            }
-            QPushButton:pressed {
-                background-color: #1c6ea4;
             }
         """)
         
@@ -1438,31 +1440,42 @@ class RestaurantDashboard(QWidget):
                     content_layout.insertWidget(0, banner)
     
     def load_restaurant_profile(self):
-        # Get the restaurant profile for this user
-        result = execute_query(
-            "SELECT r.*, u.is_active FROM restaurants r JOIN users u ON r.user_id = u.user_id WHERE r.user_id = %s",
-            (self.user.user_id,)
-        )
-        
-        if result:
-            self.restaurant_data = result[0]
-            self.restaurant_id = self.restaurant_data['restaurant_id']
+        """Get the restaurant profile for this user"""
+        try:
+            print(f"Loading restaurant profile for user ID: {self.user.user_id}")
+            result = execute_query(
+                "SELECT r.*, u.is_active FROM restaurants r JOIN users u ON r.user_id = u.user_id WHERE r.user_id = %s",
+                (self.user.user_id,)
+            )
             
-            # Update restaurant name in the sidebar
-            self.update_restaurant_name()
-            
-            # Check if restaurant is suspended
-            if 'is_active' in self.restaurant_data and not self.restaurant_data['is_active']:
-                # Show suspension notice
-                self.show_warning_message(
-                    "Account Suspended",
-                    "Your restaurant account has been suspended by the administrator. " +
-                    "While you can still access your dashboard, your restaurant will not be visible to customers. " +
-                    "Please contact support for assistance."
-                )
+            if result and len(result) > 0:
+                self.restaurant_data = result[0]
+                self.restaurant_id = self.restaurant_data['restaurant_id']
+                print(f"Successfully loaded restaurant profile. ID: {self.restaurant_id}, Name: {self.restaurant_data.get('name', 'Unknown')}")
                 
-                # Add a persistent suspension banner
-                self.show_suspension_banner()
+                # Update restaurant name in the sidebar
+                self.update_restaurant_name()
+                
+                # Check if restaurant is suspended
+                if 'is_active' in self.restaurant_data and not self.restaurant_data['is_active']:
+                    # Show suspension notice
+                    self.show_warning_message(
+                        "Account Suspended",
+                        "Your restaurant account has been suspended by the administrator. " +
+                        "While you can still access your dashboard, your restaurant will not be visible to customers. " +
+                        "Please contact support for assistance."
+                    )
+                    
+                    # Add a persistent suspension banner
+                    self.show_suspension_banner()
+            else:
+                print(f"No restaurant profile found for user ID: {self.user.user_id}")
+                self.restaurant_data = None
+                self.restaurant_id = None
+        except Exception as e:
+            print(f"Error loading restaurant profile: {e}")
+            self.restaurant_data = None
+            self.restaurant_id = None
     
     def update_restaurant_name(self):
         """Update the restaurant name display in UI"""
@@ -1483,36 +1496,45 @@ class RestaurantDashboard(QWidget):
     
     def load_profile_data(self):
         """Load restaurant data into profile form"""
-        if not self.restaurant_data:
-            return
-        
-        self.profile_name.setText(self.restaurant_data.get('name', ''))
-        self.profile_address.setText(self.restaurant_data.get('address', ''))
-        self.profile_contact.setText(self.restaurant_data.get('contact_number', ''))
-        
-        # Set cuisine type
-        cuisine = self.restaurant_data.get('cuisine_type', 'Other')
-        index = self.profile_cuisine.findText(cuisine)
-        if index >= 0:
-            self.profile_cuisine.setCurrentIndex(index)
-        else:
-            self.profile_cuisine.setCurrentText(cuisine)
-        
-        # Set advanced fields if available
-        if 'opening_time' in self.restaurant_data and self.restaurant_data['opening_time']:
-            self.profile_opening.setText(str(self.restaurant_data['opening_time']))
-        
-        if 'closing_time' in self.restaurant_data and self.restaurant_data['closing_time']:
-            self.profile_closing.setText(str(self.restaurant_data['closing_time']))
-        
-        if 'delivery_radius' in self.restaurant_data and self.restaurant_data['delivery_radius']:
-            self.profile_delivery_radius.setValue(self.restaurant_data['delivery_radius'])
-        
-        if 'min_order_amount' in self.restaurant_data and self.restaurant_data['min_order_amount']:
-            self.profile_min_order.setValue(float(self.restaurant_data['min_order_amount']))
+        try:
+            if not self.restaurant_data:
+                print("Cannot load profile data: restaurant_data is None")
+                return
+                
+            print(f"Loading profile data into form. Restaurant ID: {self.restaurant_id}")
             
-        # Update the restaurant name in the sidebar
-        self.update_restaurant_name()
+            # Set basic fields
+            self.profile_name.setText(self.restaurant_data.get('name', ''))
+            self.profile_address.setText(self.restaurant_data.get('address', ''))
+            self.profile_contact.setText(self.restaurant_data.get('contact_number', ''))
+            
+            # Set cuisine type
+            cuisine = self.restaurant_data.get('cuisine_type', 'Other')
+            index = self.profile_cuisine.findText(cuisine)
+            if index >= 0:
+                self.profile_cuisine.setCurrentIndex(index)
+            else:
+                self.profile_cuisine.setCurrentText(cuisine)
+            
+            # Set advanced fields if available
+            if 'opening_time' in self.restaurant_data and self.restaurant_data['opening_time']:
+                self.profile_opening.setText(str(self.restaurant_data['opening_time']))
+            
+            if 'closing_time' in self.restaurant_data and self.restaurant_data['closing_time']:
+                self.profile_closing.setText(str(self.restaurant_data['closing_time']))
+            
+            if 'delivery_radius' in self.restaurant_data and self.restaurant_data['delivery_radius']:
+                self.profile_delivery_radius.setValue(int(self.restaurant_data['delivery_radius']))
+            
+            if 'min_order_amount' in self.restaurant_data and self.restaurant_data['min_order_amount']:
+                self.profile_min_order.setValue(float(self.restaurant_data['min_order_amount']))
+                
+            # Update the restaurant name in the sidebar
+            self.update_restaurant_name()
+            
+            print("Successfully loaded profile data into form")
+        except Exception as e:
+            print(f"Error loading profile data: {e}")
     
     def save_profile(self):
         """Save restaurant profile"""
@@ -1768,11 +1790,12 @@ class RestaurantDashboard(QWidget):
             self.content_area.setCurrentWidget(self.menu_page)
             self.load_menu_items()
     
-    def edit_profile(self):
-        self.content_area.setCurrentWidget(self.profile_page)
-    
     def show_profile_page(self):
+        """Display the profile page and load profile data if available"""
         self.content_area.setCurrentWidget(self.profile_page)
+        # Ensure profile data is loaded when this page is visited
+        if self.restaurant_id and self.restaurant_data:
+            self.load_profile_data()
     
     def view_reports(self):
         self.content_area.setCurrentWidget(self.reports_page)
@@ -2151,6 +2174,15 @@ class RestaurantDashboard(QWidget):
         except Exception as e:
             self.show_error_message("Error", f"Failed to load orders: {str(e)}")
 
+    def prompt_profile_setup(self):
+        """Prompt new restaurant owners to set up their profile"""
+        if not self.restaurant_id:
+            self.show_info_message(
+                "Welcome to Your Restaurant Dashboard", 
+                "Please set up your restaurant profile before you can start managing orders and menu items."
+            )
+            self.show_profile_page()
+
 
 class MenuItemDialog(QDialog):
     def __init__(self, parent=None, restaurant_id=None, menu_item=None):
@@ -2169,8 +2201,15 @@ class MenuItemDialog(QDialog):
         
         # Header
         header_label = QLabel("Menu Item Details")
-        header_label.setStyleSheet("font-size: 18px; margin-bottom: 10px;")
+        header_label.setStyleSheet("font-size: 18px; margin-bottom: 10px; color: #2c3e50; font-weight: bold;")
         header_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        
+        # Set dialog background to light color
+        self.setStyleSheet("""
+            QDialog {
+                background-color: #f8f9fa;
+            }
+        """)
         
         # Form container with white background
         form_container = QFrame()
@@ -2338,14 +2377,14 @@ class MenuItemDialog(QDialog):
         msg_box.setWindowTitle(title)
         msg_box.setText(text)
         
-        # Apply dark theme styling
+        # Apply light theme styling
         msg_box.setStyleSheet("""
             QMessageBox {
-                background-color: #2c3e50;
-                color: white;
+                background-color: #f8f9fa;
+                color: #2c3e50;
             }
             QLabel {
-                color: white;
+                color: #2c3e50;
                 font-size: 14px;
             }
             QPushButton {

@@ -79,10 +79,19 @@ class RestaurantView(QWidget):
         rating_label = QLabel(rating_text)
         rating_label.setObjectName("restaurant-rating")
         
+        # Minimum order amount
+        min_order_text = "No minimum order"
+        if self.restaurant_data.get('min_order_amount') and float(self.restaurant_data['min_order_amount']) > 0:
+            min_order_text = f"Minimum Order: AED {float(self.restaurant_data['min_order_amount']):.2f}"
+        
+        min_order_label = QLabel(min_order_text)
+        min_order_label.setObjectName("min-order-amount")
+        
         header_layout.addWidget(back_btn)
         header_layout.addWidget(name_label)
         header_layout.addWidget(info_label)
         header_layout.addWidget(rating_label)
+        header_layout.addWidget(min_order_label)
         
         # Menu section
         menu_label = QLabel("Menu")
@@ -165,6 +174,12 @@ class RestaurantView(QWidget):
                 color: #f39c12;
                 font-weight: bold;
                 font-size: 16px;
+                margin-top: 5px;
+            }
+            #min-order-amount {
+                color: #e74c3c;
+                font-weight: bold;
+                font-size: 14px;
                 margin-top: 5px;
             }
             #category-frame {

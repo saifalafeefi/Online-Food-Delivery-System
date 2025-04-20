@@ -3,7 +3,7 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QLineEdit,
                             QDialog, QHBoxLayout, QGroupBox, QRadioButton,
                             QGridLayout, QCheckBox, QFrame, QSpacerItem, QSizePolicy)
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QPixmap, QFont, QIcon
+from PySide6.QtGui import QPixmap, QFont, QIcon, QKeyEvent
 from auth.user import User, UserRole
 from db_utils import execute_query
 import json
@@ -71,6 +71,10 @@ class LoginWindow(QWidget):
         register_layout.addWidget(register_label)
         register_layout.addWidget(register_btn)
         register_layout.addStretch()
+        
+        # Connect Enter key press to login
+        self.username_input.returnPressed.connect(self.attempt_login)
+        self.password_input.returnPressed.connect(self.attempt_login)
         
         # Add all sections to main layout
         layout.addLayout(header_layout)
