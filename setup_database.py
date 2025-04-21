@@ -168,9 +168,9 @@ def create_database():
                 assigned_time TIMESTAMP NULL,
                 tracking_number VARCHAR(20),
                 is_rated BOOLEAN DEFAULT FALSE,
-                FOREIGN KEY (customer_id) REFERENCES customers(customer_id),
-                FOREIGN KEY (restaurant_id) REFERENCES restaurants(restaurant_id),
-                FOREIGN KEY (delivery_person_id) REFERENCES delivery_personnel(delivery_person_id)
+                FOREIGN KEY (customer_id) REFERENCES customers(customer_id) ON DELETE CASCADE,
+                FOREIGN KEY (restaurant_id) REFERENCES restaurants(restaurant_id) ON DELETE CASCADE,
+                FOREIGN KEY (delivery_person_id) REFERENCES delivery_personnel(delivery_person_id) ON DELETE SET NULL
             )
             """,
             """
@@ -197,10 +197,10 @@ def create_database():
                 delivery_rating INT CHECK (delivery_rating >= 1 AND delivery_rating <= 5),
                 comment TEXT,
                 rating_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (customer_id) REFERENCES customers(customer_id),
-                FOREIGN KEY (order_id) REFERENCES orders(order_id),
-                FOREIGN KEY (restaurant_id) REFERENCES restaurants(restaurant_id),
-                FOREIGN KEY (delivery_person_id) REFERENCES delivery_personnel(delivery_person_id)
+                FOREIGN KEY (customer_id) REFERENCES customers(customer_id) ON DELETE CASCADE,
+                FOREIGN KEY (order_id) REFERENCES orders(order_id) ON DELETE CASCADE,
+                FOREIGN KEY (restaurant_id) REFERENCES restaurants(restaurant_id) ON DELETE CASCADE,
+                FOREIGN KEY (delivery_person_id) REFERENCES delivery_personnel(delivery_person_id) ON DELETE CASCADE
             )
             """,
             """

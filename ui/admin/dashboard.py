@@ -477,17 +477,33 @@ class AdminDashboard(QWidget):
         )
         
         if reply == QMessageBox.StandardButton.Yes:
-            result = execute_query(
-                "DELETE FROM restaurants WHERE restaurant_id = %s",
-                (restaurant_id,),
-                fetch=False
-            )
-            
-            if result is not None:
-                QMessageBox.information(self, "Success", "Restaurant deleted successfully")
-                self.load_restaurants()
-            else:
-                QMessageBox.critical(self, "Error", "Failed to delete restaurant")
+            try:
+                # Delete menus first
+                execute_query("DELETE FROM menus WHERE restaurant_id = %s", (restaurant_id,), fetch=False)
+                
+                # Delete orders and order items
+                execute_query("DELETE FROM order_items WHERE order_id IN (SELECT order_id FROM orders WHERE restaurant_id = %s)", 
+                            (restaurant_id,), fetch=False)
+                execute_query("DELETE FROM orders WHERE restaurant_id = %s", (restaurant_id,), fetch=False)
+                
+                # Delete ratings for this restaurant
+                execute_query("DELETE FROM ratings WHERE restaurant_id = %s", (restaurant_id,), fetch=False)
+                
+                # Finally delete the restaurant
+                result = execute_query(
+                    "DELETE FROM restaurants WHERE restaurant_id = %s",
+                    (restaurant_id,),
+                    fetch=False
+                )
+                
+                if result is not None:
+                    QMessageBox.information(self, "Success", "Restaurant deleted successfully")
+                    self.load_restaurants()
+                else:
+                    QMessageBox.critical(self, "Error", "Failed to delete restaurant")
+            except Exception as e:
+                print(f"Error deleting restaurant: {e}")
+                QMessageBox.critical(self, "Error", f"An error occurred: {str(e)}")
     
     def view_restaurant(self, restaurant):
         """View restaurant details"""
@@ -536,13 +552,13 @@ class AdminDashboard(QWidget):
         header_layout.addWidget(header)
         
         # Filter by role
-        role_filter = QComboBox()
-        role_filter.addItems(["All Users", "Customers", "Restaurants", "Delivery"])
-        role_filter.currentIndexChanged.connect(self.filter_users)
+        self.role_filter = QComboBox()
+        self.role_filter.addItems(["All Users", "Customers", "Restaurants", "Delivery"])
+        self.role_filter.currentIndexChanged.connect(self.filter_users)
         
         header_layout.addStretch()
         header_layout.addWidget(QLabel("Filter by role:"))
-        header_layout.addWidget(role_filter)
+        header_layout.addWidget(self.role_filter)
         
         # Table for users
         self.users_table = QTableWidget()
@@ -767,7 +783,7 @@ class AdminDashboard(QWidget):
                         restaurant_id = restaurant[0]['restaurant_id']
                         
                         # Delete menu items
-                        execute_query("DELETE FROM menu_items WHERE restaurant_id = %s", (restaurant_id,), fetch=False)
+                        execute_query("DELETE FROM menus WHERE restaurant_id = %s", (restaurant_id,), fetch=False)
                         
                         # Delete orders for this restaurant
                         # Note: In a production system, you might want to keep order history
@@ -814,7 +830,23 @@ class AdminDashboard(QWidget):
                     
                 if success:
                     QMessageBox.information(self, "Success", f"User '{user[0]['username']}' and all associated data have been deleted successfully")
-                    self.load_users()  # Refresh the table
+                    
+                    # Refresh the appropriate table based on user role
+                    if role == 'restaurant':
+                        self.load_restaurants()
+                    elif role == 'customer':
+                        # Get current filter if exists, otherwise use default
+                        current_filter = self.role_filter.currentText() if hasattr(self, 'role_filter') else "All Users"
+                        self.load_users(current_filter)
+                    elif role == 'delivery':
+                        # Force refresh the delivery personnel table if we're on that tab
+                        current_filter = self.role_filter.currentText() if hasattr(self, 'role_filter') else "All Users"
+                        self.load_users(current_filter)
+                        if hasattr(self, 'delivery_table'):
+                            self.load_delivery_personnel()
+                    else:
+                        # Default fallback - just refresh users list
+                        self.load_users("All Users")
                 else:
                     QMessageBox.warning(self, "Error", "Failed to delete user. There may be associated data that couldn't be deleted.")
                     
@@ -897,6 +929,7 @@ class AdminDashboard(QWidget):
                     LEFT JOIN orders o ON dp.delivery_person_id = o.delivery_person_id AND o.delivery_status = 'Delivered'
                     LEFT JOIN ratings r ON r.delivery_person_id = dp.delivery_person_id
                     WHERE dp.status = %s
+                    AND u.user_id IS NOT NULL
                     GROUP BY dp.delivery_person_id
                     ORDER BY dp.name
                 """
@@ -910,6 +943,7 @@ class AdminDashboard(QWidget):
                     JOIN users u ON dp.user_id = u.user_id
                     LEFT JOIN orders o ON dp.delivery_person_id = o.delivery_person_id AND o.delivery_status = 'Delivered'
                     LEFT JOIN ratings r ON r.delivery_person_id = dp.delivery_person_id
+                    WHERE u.user_id IS NOT NULL
                     GROUP BY dp.delivery_person_id
                     ORDER BY dp.name
                 """
@@ -1021,25 +1055,43 @@ class AdminDashboard(QWidget):
     def delete_delivery_person(self, delivery_person_id):
         # Confirm deletion
         confirm = QMessageBox.question(self, "Confirm Deletion", 
-                                      "Are you sure you want to delete this delivery person? This will only remove them from the delivery personnel list, not delete their user account.",
+                                      "Are you sure you want to delete this delivery person? This will remove them from all related records.",
                                       QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
         
         if confirm == QMessageBox.StandardButton.Yes:
-            # Check for active deliveries
-            active = execute_query("SELECT COUNT(*) as count FROM orders WHERE delivery_person_id = %s AND delivery_status = 'Out for Delivery'", (delivery_person_id,))
-            if active and active[0]['count'] > 0:
-                QMessageBox.warning(self, "Cannot Delete", f"This delivery person has {active[0]['count']} active deliveries. They cannot be deleted until all deliveries are completed.")
-                return
-            
-            # Delete the delivery person
-            result = execute_query("DELETE FROM delivery_personnel WHERE delivery_person_id = %s", (delivery_person_id,), fetch=False)
-            
-            if result is not None:
-                QMessageBox.information(self, "Success", "Delivery person has been removed successfully")
-                self.load_delivery_personnel()  # Refresh the table
-            else:
-                QMessageBox.warning(self, "Error", "Failed to remove delivery person")
+            try:
+                # Check for active deliveries
+                active = execute_query("SELECT COUNT(*) as count FROM orders WHERE delivery_person_id = %s AND delivery_status = 'On Delivery'", (delivery_person_id,))
+                if active and active[0]['count'] > 0:
+                    QMessageBox.warning(self, "Cannot Delete", f"This delivery person has {active[0]['count']} active deliveries. They cannot be deleted until all deliveries are completed.")
+                    return
                 
+                # Delete ratings associated with this delivery person
+                execute_query("DELETE FROM ratings WHERE delivery_person_id = %s", (delivery_person_id,), fetch=False)
+                
+                # Update orders to remove delivery person reference
+                execute_query("UPDATE orders SET delivery_person_id = NULL WHERE delivery_person_id = %s", 
+                            (delivery_person_id,), fetch=False)
+                
+                # Delete the delivery person
+                result = execute_query("DELETE FROM delivery_personnel WHERE delivery_person_id = %s", (delivery_person_id,), fetch=False)
+                
+                if result is not None:
+                    QMessageBox.information(self, "Success", "Delivery person has been removed successfully")
+                    
+                    # Force refresh all related views
+                    self.load_delivery_personnel()  # Refresh the delivery personnel table
+                    
+                    # Also refresh users table if delivery role is selected
+                    current_role_filter = self.role_filter.currentText() if hasattr(self, 'role_filter') else None
+                    if current_role_filter in ["All Users", "Delivery Personnel"]:
+                        self.load_users(current_role_filter)
+                else:
+                    QMessageBox.warning(self, "Error", "Failed to remove delivery person")
+            except Exception as e:
+                print(f"Error deleting delivery person: {e}")
+                QMessageBox.critical(self, "Error", f"An error occurred: {str(e)}")
+    
     def create_orders_page(self):
         """Create the orders management page"""
         page = QWidget()
@@ -3016,10 +3068,35 @@ class AdminDashboard(QWidget):
                 if self._delivery_refresh_counter >= 3:  # Every 1.5 seconds
                     self._delivery_refresh_counter = 0
                     
-                    # Refresh delivery personnel
+                    # Refresh delivery personnel 
                     if hasattr(self, 'status_filter'):
                         self._skip_refresh = True
-                        self.load_delivery_personnel(self.status_filter.currentText())
+                        # Important: Use direct DB query instead of cached data
+                        status_filter = self.status_filter.currentText()
+                        self.load_delivery_personnel(status_filter)
+                        self._skip_refresh = False
+            
+            # For users page, refresh periodically
+            elif current_widget == self.users_page:
+                # Create/initialize the users refresh counter
+                if not hasattr(self, '_users_refresh_counter'):
+                    self._users_refresh_counter = 0
+                
+                # Only refresh users every 5 cycles
+                self._users_refresh_counter += 1
+                if self._users_refresh_counter >= 5:  # Every 2.5 seconds
+                    self._users_refresh_counter = 0
+                    
+                    # Refresh users list
+                    if hasattr(self, 'role_filter'):
+                        self._skip_refresh = True
+                        role_filter = self.role_filter.currentText()
+                        self.load_users(role_filter)
+                        self._skip_refresh = False
+                    else:
+                        # Fallback if role_filter doesn't exist
+                        self._skip_refresh = True
+                        self.load_users("All Users")
                         self._skip_refresh = False
             
             # Dashboard page refresh
