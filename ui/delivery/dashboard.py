@@ -499,7 +499,7 @@ class DeliveryDashboard(QWidget):
             
             # Calculate earnings (10% of total order value in AED)
             delivery_count = earnings[0]['delivery_count']
-            total_earnings = float(earnings[0]['total_earnings'] or 0) * 0.10 * 3.67  # Convert to AED
+            total_earnings = float(earnings[0]['total_earnings'] or 0) * 0.10  # Convert to AED
             
             # Set values
             self.total_earnings_value.setText(f"{total_earnings:.2f} AED")
@@ -544,7 +544,7 @@ class DeliveryDashboard(QWidget):
                         formatted_date = str(delivery['order_date'])
                     
                     # Calculate delivery fee (10% of order total)
-                    fee = float(delivery['total_amount']) * 0.10 * 3.67  # Convert to AED
+                    fee = float(delivery['total_amount']) * 0.10  # Convert to AED
                     
                     # Add data to table
                     self.earnings_table.setItem(row, 0, QTableWidgetItem(str(delivery['order_id'])))
@@ -1091,7 +1091,7 @@ class DeliveryDashboard(QWidget):
             
             # Amount
             info_layout.addWidget(QLabel("Amount:"), 3, 0)
-            info_layout.addWidget(QLabel(f"{float(total_amount) * 3.67:.2f} AED"), 3, 1)
+            info_layout.addWidget(QLabel(f"{float(total_amount):.2f} AED"), 3, 1)
             
             card_layout.addLayout(info_layout)
             
@@ -1172,7 +1172,7 @@ class DeliveryDashboard(QWidget):
             
             # Amount
             info_layout.addWidget(QLabel("Amount:"), 3, 0)
-            info_layout.addWidget(QLabel(f"{float(total_amount) * 3.67:.2f} AED"), 3, 1)
+            info_layout.addWidget(QLabel(f"{float(total_amount):.2f} AED"), 3, 1)
             
             card_layout.addLayout(info_layout)
             
