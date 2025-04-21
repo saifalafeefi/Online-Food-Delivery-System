@@ -21,21 +21,27 @@ class LoginWindow(QWidget):
     
     def initUI(self):
         self.setWindowTitle("Food Delivery - Login")
-        self.setMinimumSize(400, 500)
+        self.setMinimumSize(350, 450)  # Smaller minimum size
         
+        # Main layout with margins that scale with window size
         layout = QVBoxLayout()
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(10)
         
         # Logo/Header Section
         header_layout = QVBoxLayout()
+        header_layout.setSpacing(5)
         
         # Add logo
         logo_label = QLabel()
         logo_pixmap = QPixmap("images/logo.png")
         if not logo_pixmap.isNull():
             # Scale logo to reasonable size if needed
-            logo_pixmap = logo_pixmap.scaled(200, 200, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+            logo_pixmap = logo_pixmap.scaled(150, 150, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
             logo_label.setPixmap(logo_pixmap)
             logo_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            logo_label.setMinimumSize(100, 100)  # Minimum size for logo area
+            logo_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
             header_layout.addWidget(logo_label)
             header_layout.addSpacing(10)
         else:
@@ -53,15 +59,21 @@ class LoginWindow(QWidget):
         header_layout.addWidget(subtitle)
         header_layout.addSpacing(20)
         
-        # Form Section
-        form_layout = QFormLayout()
+        # Form Section - make it expand when window grows
+        form_container = QWidget()
+        form_container.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        form_layout = QFormLayout(form_container)
+        form_layout.setContentsMargins(10, 10, 10, 10)
+        form_layout.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
         
         self.username_input = QLineEdit()
         self.username_input.setPlaceholderText("Username or Email")
+        self.username_input.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         
         self.password_input = QLineEdit()
         self.password_input.setPlaceholderText("Password")
         self.password_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self.password_input.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         
         self.remember_checkbox = QCheckBox("Remember Me")
         
@@ -73,6 +85,7 @@ class LoginWindow(QWidget):
         login_btn = QPushButton("Login")
         login_btn.setObjectName("primary-button")
         login_btn.clicked.connect(self.attempt_login)
+        login_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         
         # Register Link
         register_layout = QHBoxLayout()
@@ -92,11 +105,8 @@ class LoginWindow(QWidget):
         
         # Add all sections to main layout
         layout.addLayout(header_layout)
-        layout.addSpacing(30)
-        layout.addLayout(form_layout)
-        layout.addSpacing(20)
+        layout.addWidget(form_container, 1)  # Form gets expansion priority
         layout.addWidget(login_btn)
-        layout.addSpacing(10)
         layout.addLayout(register_layout)
         layout.addStretch()
         
@@ -231,21 +241,27 @@ class RegisterWindow(QWidget):
     
     def initUI(self):
         self.setWindowTitle("Food Delivery - Register")
-        self.setMinimumSize(500, 600)
+        self.setMinimumSize(400, 550)  # Smaller minimum size
         
+        # Main layout with margins that scale with window size
         layout = QVBoxLayout()
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(10)
         
         # Logo/Header Section
         header_layout = QVBoxLayout()
+        header_layout.setSpacing(5)
         
         # Add logo
         logo_label = QLabel()
         logo_pixmap = QPixmap("images/logo.png")
         if not logo_pixmap.isNull():
             # Scale logo to reasonable size if needed
-            logo_pixmap = logo_pixmap.scaled(200, 200, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+            logo_pixmap = logo_pixmap.scaled(150, 150, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
             logo_label.setPixmap(logo_pixmap)
             logo_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            logo_label.setMinimumSize(100, 100)  # Minimum size for logo area
+            logo_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
             header_layout.addWidget(logo_label)
             header_layout.addSpacing(10)
         
@@ -259,33 +275,45 @@ class RegisterWindow(QWidget):
         
         header_layout.addWidget(title)
         header_layout.addWidget(subtitle)
-        header_layout.addSpacing(20)
+        header_layout.addSpacing(15)
         
-        # Form Section
-        form_layout = QFormLayout()
+        # Form Section - make it expand when window grows
+        form_container = QWidget()
+        form_container.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        form_layout = QFormLayout(form_container)
+        form_layout.setContentsMargins(10, 10, 10, 10)
+        form_layout.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
+        form_layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
         
         self.username_input = QLineEdit()
         self.username_input.setPlaceholderText("Choose a username")
+        self.username_input.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         
         self.email_input = QLineEdit()
         self.email_input.setPlaceholderText("Your email address")
+        self.email_input.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         
         self.phone_input = QLineEdit()
         self.phone_input.setPlaceholderText("Your phone number")
+        self.phone_input.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         
         self.address_input = QLineEdit()
         self.address_input.setPlaceholderText("Your address (optional)")
+        self.address_input.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         
         self.password_input = QLineEdit()
         self.password_input.setPlaceholderText("Choose a password")
         self.password_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self.password_input.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         
         self.confirm_password_input = QLineEdit()
         self.confirm_password_input.setPlaceholderText("Confirm your password")
         self.confirm_password_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self.confirm_password_input.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         
         # User Role Selection
         role_group = QGroupBox("I want to join as a:")
+        role_group.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         role_layout = QHBoxLayout()
         
         self.customer_radio = QRadioButton("Customer")
@@ -311,6 +339,7 @@ class RegisterWindow(QWidget):
         register_btn = QPushButton("Create Account")
         register_btn.setObjectName("primary-button")
         register_btn.clicked.connect(self.register)
+        register_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         
         # Login Link
         login_layout = QHBoxLayout()
@@ -326,13 +355,9 @@ class RegisterWindow(QWidget):
         
         # Add all sections to main layout
         layout.addLayout(header_layout)
-        layout.addSpacing(20)
-        layout.addLayout(form_layout)
-        layout.addSpacing(10)
+        layout.addWidget(form_container, 1)  # Form gets expansion priority
         layout.addWidget(role_group)
-        layout.addSpacing(20)
         layout.addWidget(register_btn)
-        layout.addSpacing(10)
         layout.addLayout(login_layout)
         layout.addStretch()
         

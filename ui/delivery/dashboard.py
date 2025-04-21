@@ -637,7 +637,7 @@ class DeliveryDashboard(QWidget):
                 
                 # Format the amount with currency symbol
                 try:
-                    formatted_amount = f"{float(total_amount) * 3.67:.2f} AED"
+                    formatted_amount = f"{float(total_amount):.2f} AED"
                 except (ValueError, TypeError):
                     formatted_amount = f"0 AED"
                 
@@ -1455,4 +1455,4 @@ class DeliveryDashboard(QWidget):
         except Exception as e:
             # Silent exception handling for auto-refresh
             print(f"Auto-refresh error in delivery dashboard: {e}")
-            # Don't show error to user since this runs automatically 
+            # Don't show error to user since this runs automatically

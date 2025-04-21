@@ -9,8 +9,11 @@ load_dotenv()
 # Then set defaults if not found
 if 'DB_HOST' not in os.environ:
     os.environ['DB_HOST'] = 'localhost'
+if 'DB_USER' not in os.environ:
     os.environ['DB_USER'] = 'root'
-    os.environ['DB_PASSWORD'] = '12345678'
+if 'DB_PASSWORD' not in os.environ:
+    os.environ['DB_PASSWORD'] = ''
+if 'DB_NAME' not in os.environ:
     os.environ['DB_NAME'] = 'food_delivery'
 
 # Flag to track if we've shown debug information in the current session
@@ -325,4 +328,4 @@ def get_order_items(order_id):
         return execute_query(query, [order_id])
     except Exception as e:
         print(f"Error getting order items: {e}")
-        return None 
+        return None

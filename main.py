@@ -16,7 +16,11 @@ class MainApplication(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Food Delivery System")
-        self.setMinimumSize(1200, 800)
+        self.setMinimumSize(800, 600)  # Smaller minimum size
+        self.resize(1200, 800)  # Initial size but can be resized
+        
+        # Make window resizable
+        self.setWindowFlags(self.windowFlags() | Qt.WindowMaximizeButtonHint | Qt.WindowMinimizeButtonHint)
         
         # Initialize stacked widget to manage different screens
         self.stacked_widget = QStackedWidget()
@@ -39,6 +43,21 @@ class MainApplication(QMainWindow):
         
         # Start with login window
         self.stacked_widget.setCurrentWidget(self.login_window)
+        
+        # Center the window on the screen
+        self.center_on_screen()
+
+    def center_on_screen(self):
+        """Center the window on the screen"""
+        screen_geometry = QApplication.primaryScreen().geometry()
+        window_geometry = self.frameGeometry()
+        center_point = screen_geometry.center()
+        window_geometry.moveCenter(center_point)
+        self.move(window_geometry.topLeft())
+        
+        # Store the screen dimensions to use for responsive layouts
+        self.screen_width = screen_geometry.width()
+        self.screen_height = screen_geometry.height()
 
     def handle_login(self, user):
         """Handle user login by showing the appropriate dashboard"""

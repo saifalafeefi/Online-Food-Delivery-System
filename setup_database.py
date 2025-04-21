@@ -8,11 +8,15 @@ from db_utils import get_connection_config
 # Load environment variables
 load_dotenv()
 
-# Explicitly set environment variables
-os.environ['DB_HOST'] = 'localhost'
-os.environ['DB_USER'] = 'root'  # Use root since we know it works
-os.environ['DB_PASSWORD'] = '12345678'
-os.environ['DB_NAME'] = 'food_delivery'
+# Use environment variables from .env file or set defaults if not found
+if 'DB_HOST' not in os.environ:
+    os.environ['DB_HOST'] = 'localhost'
+if 'DB_USER' not in os.environ:
+    os.environ['DB_USER'] = 'root'  # Use root as default
+if 'DB_PASSWORD' not in os.environ:
+    os.environ['DB_PASSWORD'] = ''  # Empty password by default
+if 'DB_NAME' not in os.environ:
+    os.environ['DB_NAME'] = 'food_delivery'
 
 # Print current working directory and env file location
 print(f"Current working directory: {os.getcwd()}")
@@ -320,4 +324,4 @@ def create_database():
             conn.close()
 
 if __name__ == "__main__":
-    create_database() 
+    create_database()
