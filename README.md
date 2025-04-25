@@ -233,4 +233,4 @@ pip install -r requirements.txt
 If you encounter any issues not covered here, please:
 1. Check the console output for error messages
 2. Verify all installation steps were completed
-3. Contact us through the support section in the app
+3. Contact us through a pull request.
